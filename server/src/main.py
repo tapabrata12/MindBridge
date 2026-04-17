@@ -1,21 +1,19 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from src.routes.health_routes import router_health
-from src.routes.screening_routes import router_screening
-from src.core.config import settings
-import uvicorn
-app = FastAPI(title="Mental Health Assistant")
+from contextlib import asynccontextmanager
+from src.db.mongodb import connect_to_mongo,close_mongo_connection
+from src.api.routes.auth import router as auth_router
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await connect_to_mongo()
+    print("MongoDB connected ✅")
+    yield
+    await close_mongo_connection()
+    print("MongoDB disconnected ✅")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_headers=["*"],
-    allow_methods=["*"]
-)
-app.include_router(router_health)
-app.include_router(router_screening)
+# Create an instance of the FastAPI app
+app = FastAPI(lifespan=lifespan)
 
-if __name__ == "__main__":
-
-    uvicorn.run("main:app", port=8000, reload=True)
+"""
+Including every type of routes into the `main.py`
+"""
+app.include_router(auth_router)

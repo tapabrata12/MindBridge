@@ -1,0 +1,14 @@
+[project]
+name = "server"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "bcrypt<4.0.0",
+    "fastapi[standard]>=0.136.0",
+    "motor>=3.7.1",
+    "passlib>=1.7.4",
+    "python-jose[cryptography]>=3.5.0",
+    "uvicorn>=0.44.0",
+]

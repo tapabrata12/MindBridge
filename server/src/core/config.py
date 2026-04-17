@@ -1,22 +1,32 @@
-from pydantic import field_validator
+# Import BaseSettings to manage environment variables
 from pydantic_settings import BaseSettings
-from typing import List,ClassVar
 
+# Create a Settings class to store all config
 class Settings(BaseSettings):
-    API_PREFIX : ClassVar[str] = '/api/v1'
-    MONGODB_URL: str | None = None
-    ALLOWED_ORIGINS: str = ''
-    database_name: str | None = None
-    gemini_api_key: str | None = None
+    # This prefix for every route
+    PREFIX: str
+    # MongoDB connection string (we will use this later)
+    MONGODB_URL: str
+    # MongoDB Database name
+    DATABASE_NAME: str
 
-    @field_validator('ALLOWED_ORIGINS')
-    @classmethod
-    def allowed_origins(cls, v: str)-> List[str]:
-        return v.split(',') if v else []
+    USER_COLLECTION: str
 
+    # JWT secret key (used for signing tokens)
+    JWT_SECRET: str
+
+    # Algorithm used for JWT
+    JWT_ALGORITHM: str = "HS256"
+
+    # Access token expiry (in minutes)
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1
+
+    # Refresh token expiry (in days)
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
+    # Tell Pydantic to read from .env file
     class Config:
-        case_sensitive = False
-        env_file = '.env'
-        env_file_encoding = 'utf-8'
+        env_file = ".env"
 
+# Create a single settings instance to use everywhere
 settings = Settings()
