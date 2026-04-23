@@ -1,414 +1,292 @@
 # MindBridge
 
-AI-powered mental wellness companion focused on guided screening, supportive insights, coping guidance, and referral pathways. The product is designed as a structured wellness and assessment platform, not a clinical diagnosis system.
+MindBridge is an AI-powered mental wellness companion backend. The product goal is to guide users through secure onboarding, profile-based personalization, structured mental wellness screening, supportive insight generation, crisis safety handling, referral discovery, and follow-up workflows.
 
-## Table of Contents
+This repository currently contains the backend service only. The frontend, assessment engine, LangGraph orchestration, RAG pipeline, crisis service, clinic finder, reporting, notifications, and feedback workflows are still planned modules.
 
-- [Project Overview](#project-overview)
-- [Current Repository Status](#current-repository-status)
-- [Vision and Target Platform](#vision-and-target-platform)
-- [Core Capabilities](#core-capabilities)
-- [Architecture Overview](#architecture-overview)
-- [Technology Decisions](#technology-decisions)
-- [Repository Structure](#repository-structure)
-- [Getting Started](#getting-started)
-- [Configuration](#configuration)
-- [API Overview](#api-overview)
-- [Delivery Workflow](#delivery-workflow)
-- [Security, Privacy, and Safety](#security-privacy-and-safety)
-- [Deployment Model](#deployment-model)
-- [Known Gaps in the Current Snapshot](#known-gaps-in-the-current-snapshot)
-- [License](#license)
-
-## Project Overview
-
-MindBridge is intended to help users move through a guided mental wellness journey:
-
-1. Secure signup and authentication
-2. Profile-based onboarding
-3. Conversational screening with validated mental health screeners
-4. Retrieval-augmented insight generation
-5. Coping-plan generation
-6. Crisis interception and helpline surfacing
-7. Professional referral discovery
-8. Longitudinal follow-up and feedback collection
-
-The core product principle from the project specification is:
-
-> Supportive first, clinical second.
-
-### Important Disclaimer
-
-MindBridge is planned as a mental wellness support and screening platform. It should not be represented as a replacement for licensed clinical diagnosis, emergency intervention, or medical treatment. Any production deployment should display this disclaimer clearly and provide region-appropriate crisis contacts.
+Last verified against backend code: April 23, 2026.
 
 ## Current Repository Status
 
-This repository snapshot currently contains the **backend service only** under [`server/`](server). The broader planning documents describe a larger platform with frontend, RAG, LangGraph orchestration, clinic discovery, notifications, and follow-up loops, but those modules are **not yet present in this code snapshot**.
+Implemented in this backend:
 
-### Implemented Today
-
-- FastAPI backend with application lifespan hooks
-- Async MongoDB connection using Motor
+- FastAPI application with startup/shutdown lifespan hooks
+- MongoDB connection management using Motor
+- Health and root status endpoints
 - Self-hosted JWT authentication
+- bcrypt password hashing through Passlib
 - User registration and login
-- Access token refresh flow
-- Authenticated profile lookup
-- Logout by server-side refresh-token revocation
-- Swagger/ReDoc documentation endpoints
+- Swagger-compatible login endpoint
+- Authenticated `/auth/me` endpoint
+- Refresh-token rotation
+- Logout by clearing all active refresh tokens for the user
+- Profile read and update endpoints under `/api/profile`
+- Strict Pydantic v2 request/response schemas
+- Environment-driven configuration through Pydantic settings
 
-### Planned in the Product Specification
+Not implemented yet:
 
-- Onboarding profile completion flows
-- Conversational assessment engine with PHQ-9, GAD-7, PCL-5, MDQ, and AUDIT
+- Frontend app
+- Assessment engine routes/services
 - LangGraph state orchestration
-- ChromaDB-backed RAG pipeline
-- Insight reports and coping plans
-- Crisis detection middleware
-- Google Maps clinic finder
-- Feedback capture and day 7/day 30 follow-up loops
-- React + Tailwind + shadcn/ui frontend
+- ChromaDB/RAG pipeline
+- LLM integration
+- Crisis detection service
+- Report generator
+- Clinic finder
+- Notifications and follow-up system
+- Automated test suite
 
-## Vision and Target Platform
-
-The target product described in the provided planning documents is an end-to-end AI-assisted mental wellness platform with the following stages:
-
-| Phase | Intended User Outcome |
-|---|---|
-| Signup and profile building | Establish identity, baseline context, and personalization inputs |
-| AI assessment engine | Conduct structured conversational screening using validated screeners |
-| RAG knowledge layer | Ground responses in DSM-5, NIMH, WHO, and curated self-help sources |
-| Post-assessment output | Produce insight summaries, coping guidance, and next-step recommendations |
-| Crisis safety net | Detect self-harm or suicidal ideation signals and interrupt normal flow |
-| Follow-up loop | Re-engage users at day 7 and day 30 for progress tracking |
-
-## Core Capabilities
-
-### 1. Authentication and Identity
-
-- Self-hosted JWT authentication using `python-jose`
-- Password hashing with bcrypt via `passlib`
-- Short-lived access tokens and longer-lived refresh tokens
-- Server-side refresh token storage and revocation in MongoDB
-
-### 2. User Profile and Personalization
-
-The product specification expects profile-based personalization using:
-
-- Age
-- Gender
-- Occupation
-- Marital and lifestyle context
-- Average sleep hours
-- Social support level
-- Significant recent life events
-
-The current backend already stores a starter `profile` object inside each user document, which creates a clean foundation for future onboarding and personalization routes.
-
-### 3. Conversational Assessment
-
-Planned validated screeners include:
-
-- `PHQ-9` for depression
-- `GAD-7` for anxiety
-- `PCL-5` for PTSD screening
-- `MDQ` for bipolar screening
-- `AUDIT` for substance use
-
-The intended execution model is conversational, not static form filling. LangGraph is the planned orchestration layer for maintaining screener state, progression, and conditional routing.
-
-### 4. Reports and Coping Guidance
-
-Planned post-assessment outputs include:
-
-- Plain-language insight report
-- Personalized coping plan
-- Referral suggestions to nearby professionals
-- Longitudinal reassessment prompts
-
-### 5. Crisis Safety
-
-The project specification marks crisis interception as non-negotiable. The target behavior is:
-
-- Inspect every inbound user message
-- Detect self-harm or suicidal ideation signals using keyword and semantic matching
-- Pause normal assessment/report generation
-- Surface crisis support information immediately
-
-The reference documents currently mention India-specific helplines:
-
-- `iCall India`: `9152987821`
-- `Vandrevala Foundation`: `1860-2662-345`
-
-For any production release, these resources should be localized by deployment region and supplemented with emergency escalation guidance.
-
-## Architecture Overview
-
-### Target Architecture
-
-```mermaid
-flowchart TD
-    FE[Frontend\nReact + Tailwind] --> API[FastAPI\nREST + WebSocket]
-    API --> AUTH[JWT Auth Service]
-    API --> USER[User Service\nMongoDB Atlas]
-    API --> GRAPH[LangGraph Orchestration]
-    GRAPH --> ASSESS[Assessment Engine\nPHQ-9 / GAD-7 / PCL-5]
-    GRAPH --> CRISIS[Crisis Safety Net]
-    ASSESS --> RAG[RAG Pipeline\nChromaDB + Embeddings]
-    RAG --> LLM[LLM Layer\nGPT-4o-mini / Gemini Flash]
-    LLM --> REPORT[Insight Reports\nCoping Plans]
-    LLM --> MAPS[Google Maps API\nClinic Finder]
-    LLM --> NOTIFY[Email / WhatsApp\nFollow-up Notifications]
-    REPORT --> FEEDBACK[Feedback + Longitudinal Loop]
-```
-
-### Current Implemented Architecture
+## Current Architecture
 
 ```mermaid
 flowchart LR
-    CLIENT[Client / Swagger UI] --> FASTAPI[FastAPI App]
-    FASTAPI --> ROUTES[/api/auth/* Routes]
-    ROUTES --> SERVICE[User Service]
-    SERVICE --> SECURITY[JWT + bcrypt]
-    SERVICE --> MONGO[(MongoDB)]
+    CLIENT[Client / Swagger UI] --> APP[FastAPI App]
+    APP --> AUTH[/api/auth routes]
+    APP --> PROFILE[/api/profile routes]
+    AUTH --> USER_SERVICE[User Service]
+    PROFILE --> USER_SERVICE
+    USER_SERVICE --> SECURITY[JWT + bcrypt]
+    USER_SERVICE --> MONGO[(MongoDB)]
 ```
 
-### Current Request Flow
+The current backend is still foundation-level: authentication, session control, and user profile management are in place. The AI wellness workflow is still defined in planning documents, not code.
 
-1. Client calls the FastAPI backend under `/api/auth/*`
-2. Protected routes use `OAuth2PasswordBearer` to extract the access token
-3. Token is decoded using the configured JWT secret and algorithm
-4. User identity is resolved from MongoDB
-5. Business logic reads/writes user documents and refresh tokens
-
-## Technology Decisions
-
-The planning documents define a clear stack direction. The table below distinguishes the strategic target stack from the code that exists today.
-
-| Domain | Target Decision | Why It Was Chosen | Current Snapshot |
-|---|---|---|---|
-| Frontend | React + Tailwind + shadcn/ui | Fast SPA development and accessible components | Not present in repo |
-| Backend | FastAPI + Uvicorn | Async-first, Pydantic-native, OpenAPI out of the box | Implemented |
-| Auth | Self-hosted JWT + bcrypt | Full ownership of sensitive auth data | Implemented |
-| Database | MongoDB Atlas | Natural fit for nested profiles, sessions, feedback | Implemented for users/auth |
-| Vector store | ChromaDB | Local/self-hosted and cost-efficient | Planned only |
-| Embeddings | `nomic-embed-text` via Ollama | No API cost, local-friendly | Planned only |
-| Orchestration | LangGraph | Stateful multi-turn workflows | Planned only |
-| LLM provider | GPT-4o-mini or Gemini Flash | Strong quality-to-cost ratio | Planned only |
-| Maps | Google Maps Places API | Nearby clinic discovery | Planned only |
-| Notifications | Email / WhatsApp APIs | Day 7/day 30 follow-up loop | Planned only |
-| Hosting | Railway + Vercel | Simple MVP deployment model | Planned only |
-
-## Repository Structure
-
-### Actual Repository Layout
+## Project Structure
 
 ```text
-Mental-Helth-Companion/
-|-- server/
-|   |-- src/
-|   |   |-- api/routes/auth.py
-|   |   |-- core/config.py
-|   |   |-- core/dependencies.py
-|   |   |-- core/security.py
-|   |   |-- db/mongodb.py
-|   |   |-- models/user.py
-|   |   |-- schemas/user.py
-|   |   |-- services/user_service.py
-|   |   `-- main.py
-|   |-- API-DOCUMENTATION.md
-|   |-- pyproject.toml
-|   `-- uv.lock
-|-- LICENSE
-`-- README.md
+server/
+|-- src/
+|   |-- api/
+|   |   |-- __init__.py
+|   |   `-- routes/
+|   |       |-- auth.py
+|   |       `-- profile.py
+|   |-- core/
+|   |   |-- config.py
+|   |   |-- dependencies.py
+|   |   `-- security.py
+|   |-- db/
+|   |   `-- mongodb.py
+|   |-- models/
+|   |   `-- user.py
+|   |-- schemas/
+|   |   `-- user.py
+|   |-- services/
+|   |   `-- user_service.py
+|   `-- main.py
+|-- API-DOCUMENTATION.md
+|-- pyproject.toml
+|-- uv.lock
+`-- Readme.md
 ```
 
-### Target Solution Layout from Planning Documents
+## Key Files
 
-The provided `folder_structure.txt` describes a larger target solution with:
-
-- `Server/` for backend APIs and services
-- `Client/` for the React frontend
-- `docs/` for architecture and specification artifacts
-
-That planned structure is useful as the implementation roadmap, but it is not fully committed in this repository snapshot.
+- `src/main.py` creates the FastAPI app, mounts routers, and exposes `/` and `/health`.
+- `src/api/routes/auth.py` exposes register, login, Swagger login, current-user, refresh, and logout endpoints.
+- `src/api/routes/profile.py` exposes profile read and update endpoints.
+- `src/core/config.py` validates environment variables and normalizes API settings.
+- `src/core/dependencies.py` resolves the authenticated user from a Bearer access token.
+- `src/core/security.py` handles password hashing plus JWT creation/decoding.
+- `src/db/mongodb.py` manages the async MongoDB client lifecycle.
+- `src/models/user.py` defines the MongoDB user document shape.
+- `src/schemas/user.py` defines Pydantic request/response schemas.
+- `src/services/user_service.py` contains auth, token, logout, and profile database operations.
 
 ## Getting Started
 
 ### Prerequisites
 
-- Python `>= 3.14` as declared in [`server/pyproject.toml`](server/pyproject.toml)
-- `uv` for dependency management
+- Python `3.14`
+- `uv`
 - MongoDB Atlas or a local MongoDB instance
 
-### Local Development Setup
-
-```bash
-git clone <your-repository-url>
-cd Mental-Helth-Companion/server
-uv sync
-uv run uvicorn src.main:app --reload
-```
-
-The backend should then be available at:
-
-- API base: `http://localhost:8000/api`
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-
-### Windows PowerShell Alternative
+### Install Dependencies
 
 ```powershell
 cd D:\Mental-Helth-Companion\server
 uv sync
+```
+
+### Run The API
+
+```powershell
 uv run uvicorn src.main:app --reload
 ```
 
+Default local URLs:
+
+- Root: `http://localhost:8000/`
+- Health: `http://localhost:8000/health`
+- API base: `http://localhost:8000/api`
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
+
 ## Configuration
 
-The backend reads configuration from `server/.env` through Pydantic settings.
+The backend reads environment variables from `server/.env`.
 
-### Required Environment Variables
+| Variable | Required | Default | Notes |
+|---|---:|---|---|
+| `PREFIX` | Yes | none | API prefix. The code normalizes it to start with `/` and removes trailing `/`. |
+| `MONGODB_URL` | Yes | none | MongoDB connection string. |
+| `DATABASE_NAME` | Yes | none | MongoDB database name. |
+| `USER_COLLECTION` | Yes | none | MongoDB collection for user documents. |
+| `JWT_SECRET` | Yes | none | Must be at least 32 characters. |
+| `JWT_ALGORITHM` | No | `HS256` | Allowed values: `HS256`, `HS384`, `HS512`. |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | No | `15` | Must be between `1` and `1440`. |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | No | `7` | Must be between `1` and `90`. |
 
-| Variable | Required | Default | Purpose |
-|---|---|---|---|
-| `PREFIX` | Yes | None | Global API prefix, e.g. `/api` |
-| `MONGODB_URL` | Yes | None | MongoDB connection string |
-| `DATABASE_NAME` | Yes | None | MongoDB database name |
-| `USER_COLLECTION` | Yes | None | MongoDB collection for user documents |
-| `JWT_SECRET` | Yes | None | Secret used to sign JWTs |
-| `JWT_ALGORITHM` | No | `HS256` | JWT signing algorithm |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | No | `1` | Access token lifetime in minutes |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | No | `7` | Refresh token lifetime in days |
-
-### Example `.env`
+Example:
 
 ```dotenv
 PREFIX=/api
 MONGODB_URL=mongodb+srv://<username>:<password>@<cluster>/<database>?retryWrites=true&w=majority
 DATABASE_NAME=mindbridge
-USER_COLLECTION=patient
-JWT_SECRET=<replace-with-a-long-random-secret>
+USER_COLLECTION=users
+JWT_SECRET=<use-a-random-secret-at-least-32-characters-long>
 JWT_ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=1
+ACCESS_TOKEN_EXPIRE_MINUTES=15
 REFRESH_TOKEN_EXPIRE_DAYS=7
 ```
 
-### Configuration Notes
-
-- Do not commit real secrets or live database credentials
-- The current code defaults the access token lifetime to `1` minute
-- The product specification recommends a `15` minute access token in the target architecture
-- Refresh token rotation is not implemented yet; refresh reuse is validated against the stored token list
+Do not commit real secrets.
 
 ## API Overview
 
-The backend currently exposes authentication-focused endpoints only.
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/` | No | Service status message. |
+| `GET` | `/health` | No | Health check response. |
+| `POST` | `/api/auth/register` | No | Create a user and return an access/refresh token pair. |
+| `POST` | `/api/auth/login` | No | Authenticate a user and return an access/refresh token pair. |
+| `POST` | `/api/auth/login/swagger` | No | OAuth2 form login used by Swagger UI. |
+| `GET` | `/api/auth/me` | Yes | Return the authenticated user's email. |
+| `POST` | `/api/auth/refresh` | No | Rotate refresh token and issue a new token pair. |
+| `POST` | `/api/auth/logout` | Yes | Clear all refresh tokens for the authenticated user. |
+| `GET` | `/api/profile` | Yes | Return the authenticated user's profile. |
+| `PUT` | `/api/profile` | Yes | Replace the authenticated user's stored profile with validated profile data. |
 
-| Method | Path | Description |
+Full endpoint details are in `API-DOCUMENTATION.md`.
+
+## Authentication And Sessions
+
+The backend uses JWT Bearer authentication:
+
+- Access tokens include `sub`, `exp`, `type`, and `iat` claims.
+- Refresh tokens include the same core claims and are stored server-side in `refresh_tokens`.
+- Register and login append a refresh token to the user's `refresh_tokens` array.
+- Refresh validates the submitted refresh token, removes it from `refresh_tokens`, creates a new refresh token, stores the new one, and returns a new token pair.
+- Logout clears the entire `refresh_tokens` array, invalidating all sessions for that user.
+- Protected routes require a valid access token and at least one active refresh token in the user's document.
+
+Because protected routes check that `refresh_tokens` is not empty, logout effectively invalidates access to protected routes immediately, even if the access token has not reached its `exp` time yet.
+
+## User Document Shape
+
+New users are created with this MongoDB document structure:
+
+```json
+{
+  "email": "alice@example.com",
+  "hash_password": "<bcrypt-hash>",
+  "profile": {
+    "age": null,
+    "gender": null,
+    "occupation": null,
+    "sleep_hours": null,
+    "social_support": null,
+    "life_events": []
+  },
+  "refresh_tokens": [],
+  "session": {
+    "last_login_at": null,
+    "last_password_change_at": null,
+    "failed_login_attempts": 0,
+    "is_locked": false
+  },
+  "roles": ["user"],
+  "is_active": true,
+  "created_at": "<utc-iso-timestamp>",
+  "updated_at": "<utc-iso-timestamp>"
+}
+```
+
+Note: `last_login_at`, failed login counters, account lock behavior, roles, and `is_active` are stored in the model but are not actively enforced by routes yet.
+
+## Profile Fields
+
+The implemented profile schema currently supports:
+
+| Field | Type | Allowed values / range |
 |---|---|---|
-| `POST` | `/api/auth/register` | Register a new user and issue access/refresh tokens |
-| `POST` | `/api/auth/login` | Authenticate a user and issue a fresh token pair |
-| `POST` | `/api/auth/login/swagger` | Form-based login endpoint for Swagger UI OAuth flow |
-| `GET` | `/api/auth/profile` | Return the authenticated user profile document |
-| `POST` | `/api/auth/refresh` | Issue a new access token from a valid refresh token |
-| `GET` | `/api/auth/logout` | Clear stored refresh tokens and end active sessions |
+| `age` | integer or null | `10` to `100` |
+| `gender` | string or null | `male`, `female`, `other` |
+| `occupation` | string or null | `student`, `working`, `unemployed`, `retired`, `other` |
+| `sleep_hours` | integer or null | `0` to `24` |
+| `social_support` | string or null | `high`, `medium`, `low` |
+| `life_events` | string array | Cleaned, empty strings removed, max 5 items |
 
-### API Reference
-
-Detailed request/response documentation lives in [`server/API-DOCUMENTATION.md`](server/API-DOCUMENTATION.md).
-
-### Authentication Model
-
-- Access tokens are passed in `Authorization: Bearer <token>`
-- Refresh tokens are stored server-side in MongoDB
-- Logout clears the stored refresh token array for the user
-- Multiple sessions are possible because each login appends a refresh token
-- The current logout implementation revokes all sessions for the user, not a single device session
+Current `PUT /api/profile` behavior replaces the stored `profile` object with the validated schema output. If a field is omitted, it is saved as `null` or `[]` based on the schema default. It is not currently a partial patch operation.
 
 ## Delivery Workflow
 
-The supplied workflow document defines the implementation sequence below.
+The broader project roadmap remains:
 
-| Workstream | Scope |
+| Workstream | Scope | Current status |
+|---|---|---|
+| `01 - JWT Auth` | Signup, login, refresh, current-user endpoint | Implemented baseline |
+| `02 - User Profiles` | Profile schemas, service, read/update routes | Implemented baseline |
+| `03 - Assessment Engine` | LangGraph flow and PHQ-9 screener | Not started |
+| `04 - RAG Pipeline` | ChromaDB setup and document ingestion | Not started |
+| `05 - Crisis Safety Net` | Detection middleware and helpline response | Not started |
+| `06 - Report Generator` | Insight report and coping plan output | Not started |
+| `07 - Frontend Auth` | Login/signup UI and token handling | Not started |
+| `08 - Frontend Chat UI` | Streaming chat interface | Not started |
+| `09 - Clinic Finder` | Google Maps integration | Not started |
+| `10 - Testing` | Backend and frontend tests | Not started |
+
+## Planned Target Stack
+
+| Area | Decision |
 |---|---|
-| `01 - JWT Auth` | Signup, login, refresh, `/me`-style endpoints |
-| `02 - User Profiles` | MongoDB schemas and profile services |
-| `03 - Assessment Engine` | LangGraph flow and PHQ-9 screener |
-| `04 - RAG Pipeline` | ChromaDB setup and document ingestion |
-| `05 - Crisis Safety Net` | Detection middleware and helpline response |
-| `06 - Report Generator` | Insight report and coping-plan output |
-| `07 - Frontend Auth` | Login/signup UI and token handling |
-| `08 - Frontend Chat UI` | Streaming chat interface |
-| `09 - Clinic Finder` | Google Maps integration |
-| `10 - Testing` | Backend and frontend test coverage |
+| Frontend | React + Tailwind + shadcn/ui |
+| Backend | FastAPI + Uvicorn |
+| Auth | Self-hosted JWT + bcrypt |
+| Database | MongoDB Atlas |
+| Vector store | ChromaDB |
+| Embeddings | `nomic-embed-text` |
+| Orchestration | LangGraph |
+| LLM | GPT-4o-mini or Gemini Flash |
+| Maps | Google Maps Places API |
+| Notifications | Email / WhatsApp |
+| Hosting | Railway backend + Vercel frontend |
 
-### Suggested MVP Timeline from the Specification
+## Security And Safety Notes
 
-| Time Window | Focus |
-|---|---|
-| Week 1-2 | JWT auth, signup/login/refresh, profile form |
-| Week 3 | PHQ-9 conversational assessment |
-| Week 4 | Basic insight report and static clinic directory |
-| Week 5 | Crisis banner and helpline surfacing |
-| Week 6 | Google Maps clinic finder and feedback |
-| Week 7-8 | RAG pipeline and additional screeners |
+- Passwords are stored only as bcrypt hashes.
+- JWT secrets must be managed through environment variables.
+- Refresh tokens are revocable because they are stored server-side.
+- Logout revokes all active refresh tokens for the user.
+- The app must remain positioned as wellness support and screening, not diagnosis.
+- Crisis detection is mandatory before conversational assessment/chat features are added.
 
-## Security, Privacy, and Safety
+## Verification
 
-### Security Principles
+Syntax verification command:
 
-- Passwords must always be stored as bcrypt hashes
-- JWT secrets must be environment-managed and rotated when exposed
-- Protected routes must validate tokens before business logic executes
-- Refresh tokens must remain revocable server-side
-- Sensitive health-related data should be encrypted at rest in production
+```powershell
+.\.venv\Scripts\python.exe -m compileall src
+```
 
-### Privacy Principles from the Project Specification
+Route table check command:
 
-- Users should have a one-click data deletion path
-- Raw LLM outputs should not be logged if they contain sensitive user content
-- The platform should maintain clear disclosure that it is not a diagnostic system
-- Any production release handling health-related data should undergo legal and compliance review for its jurisdiction
-
-### Safety Principles
-
-- Crisis detection is mandatory in every conversational route
-- Assessment flow must pause on self-harm risk indicators
-- Helpline and escalation guidance must be visible immediately
-- Crisis resources should be localized by geography
-
-## Deployment Model
-
-The target deployment topology described in the project documents is:
-
-- Frontend on `Vercel`
-- Backend on `Railway`
-- Data in `MongoDB Atlas`
-- Vector storage in `ChromaDB`
-- Optional Ollama/local embedding runtime for development
-
-### Minimum Production Readiness Checklist
-
-- Separate development, staging, and production environments
-- Managed secret storage instead of plaintext `.env` sharing
-- Structured logging and request tracing
-- Rate limiting on auth and chat endpoints
-- Audit logging for sensitive account actions
-- Monitoring and alerting for auth failures and crisis-trigger events
-- Backup and recovery procedures for MongoDB data
-
-## Known Gaps in the Current Snapshot
-
-The README intentionally separates implemented behavior from planned behavior. At the time of writing, the main gaps are:
-
-- No frontend application is committed in this repository snapshot
-- No LangGraph, ChromaDB, embedding, or LLM integration code is present
-- No clinic finder, notification, feedback, or follow-up modules are present
-- No project-owned automated test suite is committed yet
-- No `.env.example` template is present
-- Access token TTL is currently `1` minute in code, while the product spec discusses `15` minutes
-- Crisis interception is documented as mandatory but is not implemented in the current backend routes
-
-## License
-
-This repository includes an MIT license. See [`LICENSE`](LICENSE).
+```powershell
+@'
+from src.main import app
+for route in app.routes:
+    methods = ",".join(sorted(route.methods or []))
+    print(methods, route.path)
+'@ | .\.venv\Scripts\python.exe -
+```

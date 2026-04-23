@@ -1,296 +1,127 @@
-# Mental Health Companion — API Reference
+# MindBridge API Documentation
 
-> **Base URL:** `http://localhost:8000/api`  
-> **Interactive Docs:** `http://localhost:8000/docs` (Swagger UI) · `http://localhost:8000/redoc` (ReDoc)  
-> **Auth scheme:** JWT Bearer (HS256) — access token (1 min TTL) + refresh token (7 day TTL)
+Last verified against backend code: April 23, 2026.
 
----
+Base URL:
 
-## Table of Contents
-
-- [Authentication Overview](#authentication-overview)
-- [Endpoints](#endpoints)
-  - [POST /auth/register](#post-authregister)
-  - [POST /auth/login](#post-authlogin)
-  - [POST /auth/login/swagger](#post-authloginswagger)
-  - [GET /auth/profile](#get-authprofile)
-  - [POST /auth/refresh](#post-authrefresh)
-  - [GET /auth/logout](#get-authlogout)
-- [Data Schemas](#data-schemas)
-- [Error Reference](#error-reference)
-- [Token Lifecycle](#token-lifecycle)
-
----
-
-## Authentication Overview
-
-This API uses a **dual-token JWT strategy**:
-
-| Token | TTL | Purpose |
-|---|---|---|
-| `access_token` | 1 minute (configurable) | Authorizes protected API requests |
-| `refresh_token` | 7 days (configurable) | Issues new access tokens without re-login |
-
-### How to authenticate a request
-
-Pass the access token in the `Authorization` header of every protected request:
-
+```text
+http://localhost:8000/api
 ```
+
+Interactive documentation:
+
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
+
+Authentication scheme:
+
+```text
 Authorization: Bearer <access_token>
 ```
 
-### Token flow
+The backend uses JWT access tokens and server-stored refresh tokens.
 
-```
-Register / Login
-      │
-      ▼
- access_token (1 min) ──► use in Authorization header
- refresh_token (7 days) ─► store securely (e.g., httpOnly cookie / secure storage)
-      │
-      ▼ (when access token expires)
- POST /auth/refresh  ──► new access_token (refresh_token unchanged)
-      │
-      ▼ (when done)
- GET /auth/logout ──► server clears refresh_tokens[] (all sessions invalidated)
-```
+## Endpoint Summary
 
-> **Security note:** Refresh tokens are stored server-side in MongoDB. Logout invalidates them immediately, even if they have not yet expired.
-
----
-
-## Endpoints
-
----
-
-### POST /auth/register
-
-Register a new user account and receive a token pair.
-
-**Accepts:** `application/json`  
-**Auth required:** No
-
-#### Request Body
-
-| Field | Type | Required | Constraints | Description |
-|---|---|---|---|---|
-| `email` | string (email) | ✅ | Valid email format | Must be unique in the system |
-| `password` | string | ✅ | 8–72 characters | Stored as bcrypt hash |
-
-#### Responses
-
-| Status | Meaning |
-|---|---|
-| `201 Created` | User registered. Access and refresh tokens returned. |
-| `409 Conflict` | An account with this email already exists. |
-| `422 Unprocessable Entity` | Schema validation failed (e.g. password too short). |
-
-#### Example Request + Response
-
-<details>
-<summary><strong>cURL</strong></summary>
-
-```bash
-curl -X POST http://localhost:8000/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "alice@example.com",
-    "password": "S3cur3P@ssw0rd"
-  }'
-```
-</details>
-
-<details>
-<summary><strong>JavaScript (fetch)</strong></summary>
-
-```javascript
-const response = await fetch("http://localhost:8000/api/auth/register", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    email: "alice@example.com",
-    password: "S3cur3P@ssw0rd",
-  }),
-});
-
-const data = await response.json();
-// data.content.access_token  ← store this
-// data.content.refresh_token ← store this securely
-```
-</details>
-
-<details>
-<summary><strong>Python (httpx)</strong></summary>
-
-```python
-import httpx
-
-r = httpx.post(
-    "http://localhost:8000/api/auth/register",
-    json={"email": "alice@example.com", "password": "S3cur3P@ssw0rd"},
-)
-tokens = r.json()["content"]
-access_token = tokens["access_token"]
-refresh_token = tokens["refresh_token"]
-```
-</details>
-
-**Success Response `201`:**
-```json
-{
-  "message": "User successfully registered",
-  "content": {
-    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "token_type": "bearer"
-  }
-}
-```
-
-**Error Response `409`:**
-```json
-{
-  "detail": "User already exists"
-}
-```
-
-**Error Response `422`:**
-```json
-{
-  "detail": [
-    {
-      "loc": ["body", "password"],
-      "msg": "String should have at least 8 characters",
-      "type": "string_too_short"
-    }
-  ]
-}
-```
-
----
-
-### POST /auth/login
-
-Authenticate an existing user and receive a fresh token pair.
-
-**Accepts:** `application/json`  
-**Auth required:** No
-
-#### Request Body
-
-| Field | Type | Required | Description |
+| Method | Path | Auth | Description |
 |---|---|---|---|
-| `email` | string (email) | ✅ | Registered email address |
-| `password` | string | ✅ | Account password (plain text, verified against bcrypt hash) |
+| `GET` | `/` | No | Root service status. |
+| `GET` | `/health` | No | Health check. |
+| `POST` | `/api/auth/register` | No | Register a new user and return a token pair. |
+| `POST` | `/api/auth/login` | No | Login and return a token pair. |
+| `POST` | `/api/auth/login/swagger` | No | Swagger OAuth2 form login. |
+| `GET` | `/api/auth/me` | Yes | Return the authenticated user's email. |
+| `POST` | `/api/auth/refresh` | No | Rotate refresh token and return a new token pair. |
+| `POST` | `/api/auth/logout` | Yes | Revoke all sessions for the authenticated user. |
+| `GET` | `/api/profile` | Yes | Get the authenticated user's profile. |
+| `PUT` | `/api/profile` | Yes | Replace the authenticated user's profile. |
 
-#### Responses
+## Token Model
 
-| Status | Meaning |
-|---|---|
-| `200 OK` | Credentials valid. Access and refresh tokens returned. |
-| `401 Unauthorized` | Email not found **or** password mismatch. |
-| `422 Unprocessable Entity` | Schema validation failed. |
+| Token | Default TTL | Stored server-side | Purpose |
+|---|---:|---:|---|
+| Access token | 15 minutes | No | Authorizes protected API requests. |
+| Refresh token | 7 days | Yes, in `refresh_tokens` | Rotates session and issues new token pair. |
 
-> **Note:** For security, a generic `401` is returned for both "user not found" and "wrong password" — the API does not distinguish between them.
+JWT payloads include:
 
-#### Example Request + Response
+- `sub`: user email
+- `exp`: expiration timestamp
+- `type`: `access` or `refresh`
+- `iat`: issued-at timestamp
 
-<details>
-<summary><strong>cURL</strong></summary>
+Refresh behavior:
 
-```bash
-curl -X POST http://localhost:8000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "alice@example.com",
-    "password": "S3cur3P@ssw0rd"
-  }'
-```
-</details>
+1. Client sends an active refresh token to `/api/auth/refresh`.
+2. Server validates signature, expiry, `sub`, user existence, and server-side token presence.
+3. Server removes the old refresh token with `$pull`.
+4. Server stores a new refresh token with `$push`.
+5. Server returns a new access token and a new refresh token.
 
-<details>
-<summary><strong>JavaScript (fetch)</strong></summary>
+Logout behavior:
 
-```javascript
-const response = await fetch("http://localhost:8000/api/auth/login", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    email: "alice@example.com",
-    password: "S3cur3P@ssw0rd",
-  }),
-});
+- `POST /api/auth/logout` clears all stored refresh tokens for the authenticated user.
+- Protected routes also require the user to still have at least one active refresh token.
+- After logout, protected endpoints return `401` even if the old access token has not expired yet.
 
-if (!response.ok) {
-  const err = await response.json();
-  throw new Error(err.detail); // "Incorrect email or password"
-}
+## Public Service Endpoints
 
-const { content } = await response.json();
-localStorage.setItem("access_token", content.access_token);
-```
-</details>
+### GET /
 
-<details>
-<summary><strong>Python (httpx)</strong></summary>
+Returns a simple service status response.
 
-```python
-import httpx
+Auth required: No
 
-r = httpx.post(
-    "http://localhost:8000/api/auth/login",
-    json={"email": "alice@example.com", "password": "S3cur3P@ssw0rd"},
-)
-r.raise_for_status()
-tokens = r.json()["content"]
-```
-</details>
+Success response:
 
-**Success Response `200`:**
 ```json
 {
-  "message": "User successfully logged in",
-  "content": {
-    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "token_type": "bearer"
-  }
+  "message": "MindBridge API is running"
 }
 ```
 
-**Error Response `401`:**
+### GET /health
+
+Returns a simple health response.
+
+Auth required: No
+
+Success response:
+
 ```json
 {
-  "detail": "Incorrect email or password"
+  "status": "ok"
 }
 ```
 
----
+## Authentication Endpoints
 
-### POST /auth/login/swagger
+### POST /api/auth/register
 
-> ⚠️ **For Swagger UI (`/docs`) use only.** Use `POST /auth/login` in all production clients.
+Registers a new user and returns an access/refresh token pair.
 
-Accepts `application/x-www-form-urlencoded` (OAuth2 Password Grant) to enable the Swagger UI **Authorize** button. The `username` field maps to the user's email address.
+Auth required: No
 
-**Accepts:** `application/x-www-form-urlencoded`  
-**Auth required:** No
+Request body:
 
-#### Form Fields
+```json
+{
+  "email": "alice@example.com",
+  "password": "S3cur3P@ssw0rd"
+}
+```
 
-| Field | Type | Description |
-|---|---|---|
-| `username` | string | The user's email address (`username` per OAuth2 spec) |
-| `password` | string | Account password |
+Request constraints:
 
-#### Responses
+| Field | Type | Required | Constraint |
+|---|---|---:|---|
+| `email` | email string | Yes | Must be valid email format. |
+| `password` | string | Yes | 8 to 72 characters. |
 
-| Status | Meaning |
-|---|---|
-| `200 OK` | Token pair returned (no wrapping `message`/`content` envelope). |
-| `401 Unauthorized` | Invalid credentials. |
+Extra request fields are rejected.
 
-**Success Response `200`:**
+Success response `201`:
+
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
@@ -299,328 +130,140 @@ Accepts `application/x-www-form-urlencoded` (OAuth2 Password Grant) to enable th
 }
 ```
 
----
+Errors:
 
-### GET /auth/profile
+| Status | Meaning | Example detail |
+|---:|---|---|
+| `409` | Email already exists | `User already exists` |
+| `422` | Request validation failed | FastAPI validation error array |
 
-Retrieve the authenticated user's full profile document.
-
-**Auth required:** Yes — `Authorization: Bearer <access_token>`
-
-#### Token Resolution (`search_user` dependency)
-
-The request goes through a multi-step guard before the handler is called:
-
-1. Extract the Bearer token from the `Authorization` header.
-2. Decode and validate the JWT signature using `JWT_SECRET`.
-3. Extract `sub` (email) from the decoded payload.
-4. Query MongoDB for a user with that email.
-5. Serialize `_id` (MongoDB ObjectId) to string and return the document.
-
-#### Responses
-
-| Status | Meaning |
-|---|---|
-| `200 OK` | User document returned. |
-| `401 Unauthorized` | Token missing, malformed, or expired. |
-| `404 Not Found` | Valid token but user no longer exists in DB. |
-
-#### Example Request + Response
-
-<details>
-<summary><strong>cURL</strong></summary>
+Example:
 
 ```bash
-curl -X GET http://localhost:8000/api/auth/profile \
-  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-```
-</details>
-
-<details>
-<summary><strong>JavaScript (fetch)</strong></summary>
-
-```javascript
-const accessToken = localStorage.getItem("access_token");
-
-const response = await fetch("http://localhost:8000/api/auth/profile", {
-  headers: {
-    Authorization: `Bearer ${accessToken}`,
-  },
-});
-
-if (response.status === 401) {
-  // Token expired — try refreshing
-  await refreshTokens();
-}
-
-const user = await response.json();
-console.log(user.email, user.profile);
-```
-</details>
-
-<details>
-<summary><strong>Python (httpx)</strong></summary>
-
-```python
-import httpx
-
-access_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-
-r = httpx.get(
-    "http://localhost:8000/api/auth/profile",
-    headers={"Authorization": f"Bearer {access_token}"},
-)
-r.raise_for_status()
-user = r.json()
-print(user["email"], user["profile"])
-```
-</details>
-
-**Success Response `200`:**
-```json
-{
-  "_id": "6642f1abc1234567890abcde",
-  "email": "alice@example.com",
-  "profile": {
-    "age": 28,
-    "gender": "female",
-    "occupation": "Software Engineer",
-    "sleep_hours": 7.5,
-    "social_support": "moderate",
-    "life_events": ["changed jobs", "relocated"]
-  },
-  "created_at": "2025-01-15T09:30:00.000000",
-  "refresh_tokens": ["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."]
-}
-```
-
-**Error Response `401`:**
-```json
-{
-  "detail": "Invalid or expired token"
-}
-```
-
----
-
-### POST /auth/refresh
-
-Exchange a valid refresh token for a new access token.
-
-**Accepts:** `application/json`  
-**Auth required:** No (the refresh token itself is the credential)
-
-#### Request Body
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `refresh_token` | string | ✅ | Previously issued, non-revoked JWT refresh token |
-
-#### Server-side Validation
-
-The endpoint performs these checks **in order** before issuing a new token:
-
-1. JWT signature valid (HS256 + `JWT_SECRET`)
-2. Token not expired (`exp` claim)
-3. `sub` (email) exists in payload
-4. User with that email exists in MongoDB
-5. Token is present in `user.refresh_tokens[]` (not revoked by logout)
-
-#### Responses
-
-| Status | Meaning |
-|---|---|
-| `200 OK` | New access token issued. Refresh token unchanged. |
-| `401 Unauthorized` | Token invalid, expired, or revoked. |
-| `422 Unprocessable Entity` | Schema validation failed. |
-
-#### Example Request + Response
-
-<details>
-<summary><strong>cURL</strong></summary>
-
-```bash
-curl -X POST http://localhost:8000/api/auth/refresh \
+curl -X POST http://localhost:8000/api/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."}'
+  -d '{"email":"alice@example.com","password":"S3cur3P@ssw0rd"}'
 ```
-</details>
 
-<details>
-<summary><strong>JavaScript (fetch)</strong></summary>
+### POST /api/auth/login
 
-```javascript
-async function refreshTokens() {
-  const refreshToken = localStorage.getItem("refresh_token");
+Authenticates an existing user and returns a token pair.
 
-  const response = await fetch("http://localhost:8000/api/auth/refresh", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh_token: refreshToken }),
-  });
+Auth required: No
 
-  if (!response.ok) {
-    // Refresh token expired or revoked — redirect to login
-    window.location.href = "/login";
-    return;
-  }
+Request body:
 
-  const { access_token } = await response.json();
-  localStorage.setItem("access_token", access_token);
-  return access_token;
-}
-```
-</details>
-
-<details>
-<summary><strong>Python (httpx)</strong></summary>
-
-```python
-import httpx
-
-r = httpx.post(
-    "http://localhost:8000/api/auth/refresh",
-    json={"refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."},
-)
-r.raise_for_status()
-new_access_token = r.json()["access_token"]
-```
-</details>
-
-**Success Response `200`:**
 ```json
 {
-  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.NEW_TOKEN...",
+  "email": "alice@example.com",
+  "password": "S3cur3P@ssw0rd"
+}
+```
+
+Success response `200`:
+
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "token_type": "bearer"
 }
 ```
 
-**Error Response `401`:**
-```json
-{
-  "detail": "Invalid or expired refresh token"
-}
-```
+Errors:
 
----
+| Status | Meaning | Example detail |
+|---:|---|---|
+| `401` | Email not found or password mismatch | `Incorrect email or password` |
+| `422` | Request validation failed | FastAPI validation error array |
 
-### GET /auth/logout
-
-Invalidate all active sessions for the authenticated user.
-
-**Auth required:** Yes — `Authorization: Bearer <access_token>`
-
-#### Behavior
-
-- Identifies the user via the JWT access token in the `Authorization` header.
-- Clears the entire `refresh_tokens[]` array in MongoDB.
-- **Effect:** All previously issued refresh tokens become permanently invalid, across **all devices or sessions**.
-- The current access token continues to work until its own TTL expires (default: 1 minute). For stricter invalidation, implement an access token blocklist.
-
-#### Responses
-
-| Status | Meaning |
-|---|---|
-| `200 OK` | Logged out. Refresh tokens cleared. |
-| `200 OK` (already out) | No refresh tokens existed; user was already logged out. |
-| `401 Unauthorized` | Access token missing, invalid, or expired. |
-| `404 Not Found` | User matching the token not found (rare edge case). |
-
-#### Example Request + Response
-
-<details>
-<summary><strong>cURL</strong></summary>
+Example:
 
 ```bash
-curl -X GET http://localhost:8000/api/auth/logout \
-  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-```
-</details>
-
-<details>
-<summary><strong>JavaScript (fetch)</strong></summary>
-
-```javascript
-const accessToken = localStorage.getItem("access_token");
-
-await fetch("http://localhost:8000/api/auth/logout", {
-  headers: { Authorization: `Bearer ${accessToken}` },
-});
-
-// Clear local tokens regardless of server response
-localStorage.removeItem("access_token");
-localStorage.removeItem("refresh_token");
-```
-</details>
-
-<details>
-<summary><strong>Python (httpx)</strong></summary>
-
-```python
-import httpx
-
-r = httpx.get(
-    "http://localhost:8000/api/auth/logout",
-    headers={"Authorization": f"Bearer {access_token}"},
-)
-print(r.json()["message"])
-```
-</details>
-
-**Success Response `200` (normal logout):**
-```json
-{
-  "message": "Token deletion True. You have successfully logged out"
-}
+curl -X POST http://localhost:8000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"alice@example.com","password":"S3cur3P@ssw0rd"}'
 ```
 
-**Success Response `200` (already logged out):**
-```json
-{
-  "message": "Token deletion Already logged out. You have successfully logged out"
-}
+### POST /api/auth/login/swagger
+
+OAuth2 password-form login endpoint used by Swagger UI's Authorize button.
+
+Use `/api/auth/login` for normal JSON clients.
+
+Auth required: No
+
+Content type:
+
+```text
+application/x-www-form-urlencoded
 ```
 
-**Error Response `404` (no active session):**
-```json
-{
-  "message": "You are not logged in"
-}
-```
+Form fields:
 
----
+| Field | Meaning |
+|---|---|
+| `username` | User email address. |
+| `password` | User password. |
 
-## Data Schemas
-
-### UserCreate (request)
+Success response `200`:
 
 ```json
 {
-  "email": "alice@example.com",
-  "password": "S3cur3P@ssw0rd"
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer"
 }
 ```
 
-| Field | Type | Constraints |
-|---|---|---|
-| `email` | `string` (email format) | Required, unique |
-| `password` | `string` | Required, 8–72 chars |
+Errors:
 
----
+| Status | Meaning | Example detail |
+|---:|---|---|
+| `401` | Invalid credentials | `Incorrect email or password` |
 
-### UserLogin (request)
+### GET /api/auth/me
+
+Returns the authenticated user's email address.
+
+Auth required: Yes
+
+Headers:
+
+```text
+Authorization: Bearer <access_token>
+```
+
+Success response `200`:
 
 ```json
 {
-  "email": "alice@example.com",
-  "password": "S3cur3P@ssw0rd"
+  "email": "alice@example.com"
 }
 ```
 
----
+Errors:
 
-### RefreshRequest (request)
+| Status | Meaning | Example detail |
+|---:|---|---|
+| `401` | Missing, invalid, expired, or revoked session | `Invalid or expired token` |
+| `401` | No active refresh token remains for this user | `Session expired, please login again` |
+| `500` | Stored user token data is malformed | `Invalid user token store` |
+
+Example:
+
+```bash
+curl http://localhost:8000/api/auth/me \
+  -H "Authorization: Bearer <access_token>"
+```
+
+### POST /api/auth/refresh
+
+Rotates a valid refresh token and returns a new token pair.
+
+Auth required: No
+
+Request body:
 
 ```json
 {
@@ -628,141 +271,396 @@ print(r.json()["message"])
 }
 ```
 
----
+Request constraints:
 
-### TokenResponse (response)
+| Field | Type | Required | Constraint |
+|---|---|---:|---|
+| `refresh_token` | string | Yes | Minimum length 20. |
 
-Returned by `/register`, `/login`, `/refresh`, and `/login/swagger`.
+Success response `200`:
 
 ```json
 {
-  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "access_token": "new-access-token",
+  "refresh_token": "new-refresh-token",
   "token_type": "bearer"
 }
 ```
 
-> **Note:** `/register` and `/login` wrap this in `{ "message": "...", "content": { ...TokenResponse } }`.
+Important: the old refresh token is removed from MongoDB and cannot be reused.
 
----
+Errors:
 
-### UserResponse (response — profile)
+| Status | Meaning | Example detail |
+|---:|---|---|
+| `401` | Refresh token invalid, expired, revoked, reused, or not linked to a user | `Invalid or expired refresh token` |
+| `422` | Request validation failed | FastAPI validation error array |
 
-Full MongoDB user document returned by `GET /auth/profile`.
+Example:
+
+```bash
+curl -X POST http://localhost:8000/api/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token":"<refresh_token>"}'
+```
+
+### POST /api/auth/logout
+
+Revokes all refresh tokens for the authenticated user.
+
+Auth required: Yes
+
+Headers:
+
+```text
+Authorization: Bearer <access_token>
+```
+
+Success response `200`:
 
 ```json
 {
-  "_id": "6642f1abc1234567890abcde",
-  "email": "alice@example.com",
-  "profile": {
-    "age": 28,
-    "gender": "female",
-    "occupation": "Software Engineer",
-    "sleep_hours": 7.5,
-    "social_support": "moderate",
-    "life_events": ["changed jobs", "relocated"]
-  },
-  "created_at": "2025-01-15T09:30:00.000000",
-  "refresh_tokens": ["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."]
+  "message": "Successfully logged out"
 }
 ```
 
-#### UserProfile object fields
-
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `age` | integer \| null | `null` | User's age |
-| `gender` | string \| null | `null` | User's gender identity |
-| `occupation` | string \| null | `null` | Current occupation |
-| `sleep_hours` | number \| null | `null` | Average nightly sleep hours |
-| `social_support` | string \| null | `null` | Perceived social support level |
-| `life_events` | string[] | `[]` | Self-reported major life events |
-
----
-
-## Error Reference
-
-All errors follow FastAPI's standard error envelope:
+Already logged out response `200`:
 
 ```json
-{ "detail": "<human-readable message>" }
+{
+  "message": "Already logged out"
+}
 ```
 
-Validation errors return an array under `detail`:
+Errors:
+
+| Status | Meaning | Example detail |
+|---:|---|---|
+| `401` | Missing, invalid, expired, or malformed access token | `Invalid or expired token` |
+| `404` | User no longer exists | `User not found` |
+
+Example:
+
+```bash
+curl -X POST http://localhost:8000/api/auth/logout \
+  -H "Authorization: Bearer <access_token>"
+```
+
+## Profile Endpoints
+
+Profile endpoints use the authenticated user's ID from the access token dependency. Clients do not pass a user ID in the URL.
+
+### GET /api/profile
+
+Returns the authenticated user's profile object.
+
+Auth required: Yes
+
+Headers:
+
+```text
+Authorization: Bearer <access_token>
+```
+
+Success response `200`:
+
+```json
+{
+  "age": 28,
+  "gender": "female",
+  "occupation": "working",
+  "sleep_hours": 7,
+  "social_support": "medium",
+  "life_events": ["changed jobs", "relocated"]
+}
+```
+
+Default profile response for a new user:
+
+```json
+{
+  "age": null,
+  "gender": null,
+  "occupation": null,
+  "sleep_hours": null,
+  "social_support": null,
+  "life_events": []
+}
+```
+
+Errors:
+
+| Status | Meaning | Example detail |
+|---:|---|---|
+| `401` | Missing, invalid, expired, or revoked session | `Session expired, please login again` |
+| `400` | Authenticated user ID is malformed | `Invalid user ID` |
+| `404` | User or profile not found | `User not found` / `Profile not found` |
+| `500` | Unexpected database/service failure | `Failed to fetch profile: ...` |
+
+Example:
+
+```bash
+curl http://localhost:8000/api/profile \
+  -H "Authorization: Bearer <access_token>"
+```
+
+### PUT /api/profile
+
+Replaces the authenticated user's stored profile with validated profile data.
+
+Auth required: Yes
+
+Headers:
+
+```text
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+Request body:
+
+```json
+{
+  "age": 28,
+  "gender": "female",
+  "occupation": "working",
+  "sleep_hours": 7,
+  "social_support": "medium",
+  "life_events": ["changed jobs", "relocated"]
+}
+```
+
+Important current behavior:
+
+- The route uses `PUT`, not `PATCH`.
+- The service stores `profile_details.model_dump()` as the full `profile` object.
+- Omitted fields are saved as their schema defaults, usually `null` or `[]`.
+- Extra fields are rejected.
+
+Success response `200`:
+
+```json
+{
+  "age": 28,
+  "gender": "female",
+  "occupation": "working",
+  "sleep_hours": 7,
+  "social_support": "medium",
+  "life_events": ["changed jobs", "relocated"]
+}
+```
+
+Errors:
+
+| Status | Meaning | Example detail |
+|---:|---|---|
+| `400` | Authenticated user ID is malformed | `Invalid user ID` |
+| `401` | Missing, invalid, expired, or revoked session | `Invalid or expired token` |
+| `404` | User not found | `User not found` |
+| `422` | Profile validation failed | FastAPI validation error array |
+| `500` | Unexpected database/service failure | `Failed to update profile: ...` |
+
+Example:
+
+```bash
+curl -X PUT http://localhost:8000/api/profile \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "age": 28,
+    "gender": "female",
+    "occupation": "working",
+    "sleep_hours": 7,
+    "social_support": "medium",
+    "life_events": ["changed jobs", "relocated"]
+  }'
+```
+
+## Data Schemas
+
+### UserCreate
+
+Used by `POST /api/auth/register`.
+
+```json
+{
+  "email": "alice@example.com",
+  "password": "S3cur3P@ssw0rd"
+}
+```
+
+Rules:
+
+- `email` must be a valid email address.
+- `password` must be 8 to 72 characters.
+- Unknown fields are rejected.
+- String whitespace is stripped.
+
+### UserLogin
+
+Used by `POST /api/auth/login`.
+
+```json
+{
+  "email": "alice@example.com",
+  "password": "S3cur3P@ssw0rd"
+}
+```
+
+Rules:
+
+- `email` must be a valid email address.
+- `password` must be 8 to 72 characters.
+- Unknown fields are rejected.
+- String whitespace is stripped.
+
+### RefreshRequest
+
+Used by `POST /api/auth/refresh`.
+
+```json
+{
+  "refresh_token": "<refresh_token>"
+}
+```
+
+Rules:
+
+- `refresh_token` must be a string.
+- Minimum length is 20.
+- Unknown fields are rejected.
+- String whitespace is stripped.
+
+### TokenResponse
+
+Returned by register, login, Swagger login, and refresh.
+
+```json
+{
+  "access_token": "<access_token>",
+  "refresh_token": "<refresh_token>",
+  "token_type": "bearer"
+}
+```
+
+### UserResponse
+
+Returned by `GET /api/auth/me`.
+
+```json
+{
+  "email": "alice@example.com"
+}
+```
+
+### UserProfileUpdate
+
+Used by `PUT /api/profile`.
+
+| Field | Type | Required | Allowed values / range |
+|---|---|---:|---|
+| `age` | integer or null | No | `10` to `100` |
+| `gender` | string or null | No | `male`, `female`, `other` |
+| `occupation` | string or null | No | `student`, `working`, `unemployed`, `retired`, `other` |
+| `sleep_hours` | integer or null | No | `0` to `24` |
+| `social_support` | string or null | No | `high`, `medium`, `low` |
+| `life_events` | string array or null | No | Empty values removed, max 5 stored |
+
+Example:
+
+```json
+{
+  "age": 28,
+  "gender": "female",
+  "occupation": "working",
+  "sleep_hours": 7,
+  "social_support": "medium",
+  "life_events": ["changed jobs", "relocated"]
+}
+```
+
+### UserProfileResponse
+
+Returned by `GET /api/profile` and `PUT /api/profile`.
+
+```json
+{
+  "age": 28,
+  "gender": "female",
+  "occupation": "working",
+  "sleep_hours": 7,
+  "social_support": "medium",
+  "life_events": ["changed jobs", "relocated"]
+}
+```
+
+## Error Format
+
+Most application errors use FastAPI's standard error envelope:
+
+```json
+{
+  "detail": "Human readable message"
+}
+```
+
+Validation errors use FastAPI/Pydantic's validation format:
 
 ```json
 {
   "detail": [
-    { "loc": ["body", "field_name"], "msg": "...", "type": "..." }
+    {
+      "type": "string_too_short",
+      "loc": ["body", "password"],
+      "msg": "String should have at least 8 characters",
+      "input": "short"
+    }
   ]
 }
 ```
 
-### HTTP Status Code Summary
+Common status codes:
 
-| Code | Trigger | Example message |
-|---|---|---|
-| `201 Created` | Registration succeeded | — |
-| `200 OK` | Request succeeded | — |
-| `401 Unauthorized` | Invalid/expired/missing token or wrong credentials | `"Invalid or expired token"` |
-| `404 Not Found` | User lookup failed post-authentication | `"Please login first"` |
-| `409 Conflict` | Email already registered | `"User already exists"` |
-| `422 Unprocessable Entity` | Pydantic schema validation failed | *(array of field errors)* |
+| Status | Typical cause |
+|---:|---|
+| `200` | Request succeeded. |
+| `201` | User registration succeeded. |
+| `400` | Authenticated user ID is malformed. |
+| `401` | Missing/invalid/expired token, revoked session, or wrong credentials. |
+| `404` | User or profile not found. |
+| `409` | Email already registered. |
+| `422` | Request body validation failed. |
+| `500` | Unexpected server/database state. |
 
----
+## Example Client Flow
 
-## Token Lifecycle
+1. Register or login.
+2. Store the returned `access_token` for API authorization.
+3. Store the returned `refresh_token` securely.
+4. Call protected endpoints with `Authorization: Bearer <access_token>`.
+5. When access expires, call `POST /api/auth/refresh` with the current refresh token.
+6. Replace both stored tokens with the response from refresh.
+7. On logout, call `POST /api/auth/logout` and clear local token state.
 
-### Detailed sequence diagram
+Example sequence:
 
+```bash
+curl -X POST http://localhost:8000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"alice@example.com","password":"S3cur3P@ssw0rd"}'
+
+curl http://localhost:8000/api/auth/me \
+  -H "Authorization: Bearer <access_token>"
+
+curl -X PUT http://localhost:8000/api/profile \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"age":28,"gender":"female","occupation":"working","sleep_hours":7,"social_support":"medium","life_events":["changed jobs"]}'
+
+curl -X POST http://localhost:8000/api/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token":"<refresh_token>"}'
+
+curl -X POST http://localhost:8000/api/auth/logout \
+  -H "Authorization: Bearer <access_token>"
 ```
-Client                          API Server                  MongoDB
-  │                                 │                          │
-  │──POST /auth/register ──────────►│                          │
-  │  { email, password }            │──find_one(email) ───────►│
-  │                                 │◄── null (not found) ─────│
-  │                                 │──bcrypt hash password    │
-  │                                 │──insert_one(user doc) ──►│
-  │                                 │──create_access_token()   │
-  │                                 │──create_refresh_token()  │
-  │                                 │──$push refresh_tokens ──►│
-  │◄── 201 { access, refresh } ─────│                          │
-  │                                 │                          │
-  │──GET /auth/profile ─────────────►│                         │
-  │  Authorization: Bearer <access> │──decode_token()          │
-  │                                 │──find_one(email) ───────►│
-  │◄── 200 { user document } ────────│◄── user doc ────────────│
-  │                                 │                          │
-  │  (access token expires)         │                          │
-  │                                 │                          │
-  │──POST /auth/refresh ────────────►│                         │
-  │  { refresh_token }              │──decode_token()          │
-  │                                 │──find_one(email) ───────►│
-  │                                 │──check refresh_tokens[] ►│
-  │                                 │──create_access_token()   │
-  │◄── 200 { new_access, refresh } ──│                         │
-  │                                 │                          │
-  │──GET /auth/logout ──────────────►│                         │
-  │  Authorization: Bearer <access> │──decode_token()          │
-  │                                 │──$set refresh_tokens: []►│
-  │◄── 200 { message: "logged out" }─│                         │
-```
-
-### Multi-session behavior
-
-- Each login appends a new refresh token to `refresh_tokens[]` — multiple active sessions are supported.
-- `GET /auth/logout` clears the **entire** array, terminating all sessions simultaneously.
-- Individual session revocation (logout from one device only) is not yet implemented.
-
----
-
-## Endpoint Summary
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `POST` | `/api/auth/register` | No | Register a new user; returns token pair |
-| `POST` | `/api/auth/login` | No | Authenticate user; returns token pair |
-| `POST` | `/api/auth/login/swagger` | No | Swagger UI OAuth2 login (form-data) |
-| `GET` | `/api/auth/profile` | ✅ Bearer | Get authenticated user's full profile |
-| `POST` | `/api/auth/refresh` | No | Exchange refresh token for new access token |
-| `GET` | `/api/auth/logout` | ✅ Bearer | Revoke all refresh tokens (logout all sessions) |
