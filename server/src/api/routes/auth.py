@@ -30,7 +30,7 @@ async def test_login(form_data: OAuth2PasswordRequestForm = Depends()):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
     return result
 
-@router.get('/profile', response_model=UserResponse)
+@router.get('/me', response_model=UserResponse)
 async def get_user(user=Depends(search_user)):
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Please login first")

@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from src.db.mongodb import connect_to_mongo,close_mongo_connection
+from src.db.mongodb import connect_to_mongo, close_mongo_connection
 from src.api.routes.auth import router as auth_router
+from src.api.routes.profile import router as profile_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_to_mongo()
@@ -17,3 +18,4 @@ app = FastAPI(lifespan=lifespan)
 Including every type of routes into the `main.py`
 """
 app.include_router(auth_router)
+app.include_router(profile_router)

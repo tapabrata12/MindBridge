@@ -37,6 +37,8 @@ async def search_user(token: str = Depends(search_token_schema)):
     user = await mongodb.db[settings.USER_COLLECTION].find_one({"email":email})
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    if not user.get("refresh_tokens"):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token Login again")
 
     user['_id'] = str(user['_id'])
 
