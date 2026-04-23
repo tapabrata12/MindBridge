@@ -1,195 +1,129 @@
-from bson import ObjectId
-from bson.errors import InvalidId
-from fastapi import HTTPException,status
-from src.core.config import settings
-from src.db import mongodb
-from src.models.user import create_user
-from src.schemas.user import TokenResponse,UserProfileResponse,UserProfileUpdate
-from src.core.security import (
-    hash_password,
-    verify_password,
-    create_access_token,
-    create_refresh_token,
-    decode_token
-)
+# File: server/src/services/user_service.py  # Full file path comment as requested
 
-async def register_user(email: str, password: str)-> dict | None:
-    """
-    Check if the user exists if exists then return None means user exists
-    if user doesn't exist then:
-    1. Hash the given password
-    2. Create a new user
-    3. Save it to the database
-    """
-    existed_user = await mongodb.db[settings.USER_COLLECTION].find_one({'email': email})
-    if existed_user:
-        return None
+from datetime import datetime, timezone  # Import timezone-aware datetime utilities
+from typing import Any, Dict, Optional  # Import typing helpers for clearer function contracts
+from bson import ObjectId  # Import MongoDB ObjectId converter
+from bson.errors import InvalidId  # Import invalid ObjectId error type
+from fastapi import HTTPException, status  # Import HTTP exception and status code helpers
+from src.core.config import settings  # Import global app settings
+from src.core.security import create_access_token, create_refresh_token, decode_token, hash_password, verify_password  # Import security helpers
+from src.db import mongodb  # Import MongoDB database module
+from src.models.user import create_user  # Import user document factory
+from src.schemas.user import TokenResponse, UserProfileResponse, UserProfileUpdate  # Import Pydantic v2 response/update schemas
 
-    hashed_password = hash_password(password)
-    user = create_user(email, hashed_password)
 
-    await mongodb.db[settings.USER_COLLECTION].insert_one(user)
+def _utc_now_iso() -> str:  # Create helper for consistent UTC timestamps
+    return datetime.now(timezone.utc).isoformat()  # Return current UTC timestamp in ISO format
 
-    access_token = create_access_token({'sub': email})
-    refresh_token = create_refresh_token({'sub': email})
 
-    await mongodb.db[settings.USER_COLLECTION].update_one(
-        {"email": email},
-        {"$push": {"refresh_tokens": refresh_token}},
-    )
+async def register_user(email: str, password: str) -> Optional[Dict[str, Any]]:  # Register new user and issue initial token pair
+    existing_user = await mongodb.db[settings.USER_COLLECTION].find_one({"email": email})  # Check if user already exists by email
+    if existing_user is not None:  # Handle duplicate account case
+        return None  # Return None so route can raise 409 Conflict
 
-    return TokenResponse(access_token=access_token,refresh_token=refresh_token).model_dump()
+    hashed_password = hash_password(password)  # Hash plain password with bcrypt before saving
+    user_document = create_user(email, hashed_password)  # Build new user document with default profile fields
+    await mongodb.db[settings.USER_COLLECTION].insert_one(user_document)  # Insert new user document asynchronously
 
-async def user_login(email: str, password: str)-> dict | None:
-    """
-      Check if user doesn't exist then return None
-      if the user exists then:
-      1. verify the password of not ok then return None if ok then:
-      2. Create access token and refresh token
-      3. Save the refresh token to the database
-      4. Return the access token and refresh token
-      """
-    existed_user = await mongodb.db[settings.USER_COLLECTION].find_one({'email': email})
-    if not existed_user:
-        return None
-    check_password = verify_password(password, existed_user["hash_password"])
+    access_token = create_access_token({"sub": email})  # Create short-lived access token
+    refresh_token = create_refresh_token({"sub": email})  # Create long-lived refresh token
+    await mongodb.db[settings.USER_COLLECTION].update_one({"email": email}, {"$push": {"refresh_tokens": refresh_token}, "$set": {"updated_at": _utc_now_iso()}})  # Save refresh token and update timestamp
 
-    if not check_password:
-        return None
+    return TokenResponse(access_token=access_token, refresh_token=refresh_token).model_dump()  # Return schema-safe token response payload
 
-    access_token = create_access_token({'sub': email})
-    refresh_token = create_refresh_token({'sub': email})
 
-    await mongodb.db[settings.USER_COLLECTION].update_one(
-        {"email": email},
-        {"$push": {"refresh_tokens": refresh_token}},
-    )
+async def user_login(email: str, password: str) -> Optional[Dict[str, Any]]:  # Authenticate existing user and issue new token pair
+    existing_user = await mongodb.db[settings.USER_COLLECTION].find_one({"email": email})  # Fetch user by email
+    if existing_user is None:  # Handle unknown email
+        return None  # Return None so route can raise 401 Unauthorized
 
-    return TokenResponse(access_token=access_token,refresh_token=refresh_token).model_dump()
+    is_password_valid = verify_password(password, existing_user["hash_password"])  # Compare provided password with bcrypt hash
+    if not is_password_valid:  # Handle wrong password
+        return None  # Return None so route can raise 401 Unauthorized
 
-async def refresh_access_token(refresh_token: str) -> dict | None:
-    """
-    Step 1: Verify refresh token signature is valid
-    Step 2: Extract email from token payload
-    Step 3: Check that email exists in DB
-    Step 4: Check that refresh token exists in DB (revocation check)
-    """
+    access_token = create_access_token({"sub": email})  # Issue fresh access token after successful auth
+    refresh_token = create_refresh_token({"sub": email})  # Issue fresh refresh token after successful auth
+    await mongodb.db[settings.USER_COLLECTION].update_one({"email": email}, {"$push": {"refresh_tokens": refresh_token}, "$set": {"updated_at": _utc_now_iso()}})  # Track refresh token server-side and update timestamp
 
-    # Step 1 — decode and verify signature
-    decoded_refresh_token = decode_token(refresh_token)
-    if decoded_refresh_token is None:
-        return None
+    return TokenResponse(access_token=access_token, refresh_token=refresh_token).model_dump()  # Return structured token payload
 
-    # Step 2 — extract email
-    email = decoded_refresh_token.get("sub")
-    if not email:
-        return None
 
-    # Step 3 — check user exists in DB
-    user = await mongodb.db[settings.USER_COLLECTION].find_one({"email": email})
-    if not user:
-        return None
+async def refresh_access_token(refresh_token: str) -> Optional[Dict[str, Any]]:  # Rotate refresh token and mint fresh access token
+    decoded_payload = decode_token(refresh_token)  # Decode incoming refresh token and verify signature/expiry
+    if decoded_payload is None:  # Handle invalid or expired refresh token
+        return None  # Return None so route can raise 401 Unauthorized
 
-    # Step 4 — check refresh token exists in DB (not revoked)
-    if refresh_token not in user.get("refresh_tokens", []):
-        return None
+    email = decoded_payload.get("sub")  # Extract email from token subject claim
+    if not isinstance(email, str) or not email.strip():  # Validate subject claim integrity
+        return None  # Return None for malformed payload
 
-    # All checks passed — issue new access token
-    new_access_token = create_access_token({"sub": email})
+    user = await mongodb.db[settings.USER_COLLECTION].find_one({"email": email})  # Fetch user document tied to refresh token subject
+    if user is None:  # Handle missing user document
+        return None  # Return None for invalid refresh flow
 
-    return TokenResponse(
-        access_token=new_access_token,
-        refresh_token=refresh_token
-    ).model_dump()
+    current_tokens = user.get("refresh_tokens", [])  # Read server-side refresh token list
+    if refresh_token not in current_tokens:  # Check token revocation/reuse protection
+        return None  # Return None when token is not active anymore
 
-async def get_user_and_delete_refresh_token(email: str)-> bool | str:
+    new_access_token = create_access_token({"sub": email})  # Mint new access token for continued API use
+    new_refresh_token = create_refresh_token({"sub": email})  # Mint brand-new refresh token for rotation strategy
 
-    """
+    await mongodb.db[settings.USER_COLLECTION].update_one(  # Atomically rotate refresh token in database
+        {"email": email},  # Match current user by email
+        {  # Start update operations block
+            "$pull": {"refresh_tokens": refresh_token},  # Remove old refresh token so it cannot be reused
+            "$push": {"refresh_tokens": new_refresh_token},  # Add newly issued refresh token as active token
+            "$set": {"updated_at": _utc_now_iso()},  # Stamp update time for auditability
+        },  # End update operations block
+    )  # Finish async database update
 
-    Step 1: Verify user exists
-    Step 2: Check that if the "refresh_tokens" array already empty or not if yes then return None
-    Step 3: Update the array to []
-    Step 4: Return successful message
+    return TokenResponse(access_token=new_access_token, refresh_token=new_refresh_token).model_dump()  # Return rotated token pair to client
 
-    :param email:
-    :return: successful | None
-    """
-    if not email:
-        return False
-    user = await mongodb.db[settings.USER_COLLECTION].find_one({'email':email})
-    if not user:
-        return False
 
-    if not user.get("refresh_tokens"):
-        return "Already logged out"
+async def get_user_and_delete_refresh_token(email: str) -> bool | str:  # Revoke all active sessions for a user
+    if not isinstance(email, str) or not email.strip():  # Validate email input shape
+        return False  # Return False for invalid function input
 
-    await mongodb.db[settings.USER_COLLECTION].update_one(
-        {"email": email},  # FILTER — find this user
-        {"$set": {"refresh_tokens": []}}  # UPDATE — replace with an empty array
-    )
+    user = await mongodb.db[settings.USER_COLLECTION].find_one({"email": email})  # Find user by email
+    if user is None:  # Handle user not found path
+        return False  # Return False so route can return 404
 
-    return True
+    if not user.get("refresh_tokens"):  # Check if user already has no active sessions
+        return "Already logged out"  # Return idempotent state message
 
-async def user_profile_update(user_id: str, profile_details: UserProfileUpdate) -> UserProfileResponse:
-    """
-    :param user_id:
-    :param profile_details:
-    :return: UserProfileResponse type updated profile
-    Step 1: Very user by ObjID
-    Step 2: Update the user profile details
-    Step 3 : Return updated user profile details
-    """
-    try:
-        _id = ObjectId(user_id)
-    except InvalidId:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="Invalid user ID")
+    await mongodb.db[settings.USER_COLLECTION].update_one({"email": email}, {"$set": {"refresh_tokens": [], "updated_at": _utc_now_iso()}})  # Revoke all sessions and update timestamp
+    return True  # Return success flag for logout response
 
-    result = await mongodb.db[settings.USER_COLLECTION].update_one(
-        {'_id': _id},
-        {'$set': {"profile": profile_details.model_dump()}}
-    )
-    if result.matched_count == 0:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    existing_user = await mongodb.db[settings.USER_COLLECTION].find_one({'_id': _id})
 
-    if not existing_user or not existing_user.get("profile"):
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve updated profile"
-        )
-    return UserProfileResponse.model_validate(existing_user['profile'])
+async def user_profile_update(user_id: str, profile_details: UserProfileUpdate) -> UserProfileResponse:  # Update authenticated user's profile document
+    try:  # Start ObjectId conversion validation
+        object_id = ObjectId(user_id)  # Convert incoming string user ID into Mongo ObjectId
+    except InvalidId:  # Catch invalid ID format
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user ID")  # Raise 400 for malformed ID
 
-async def get_user_profile(user_id: str) -> UserProfileResponse:
-    """
-    :param user_id:
-    :return: UserProfileResponse type updated profile
-    Step 1: Very user by ObjID
-    Step 2: Fetch profile for current user
-    Step 3 : Return user profile details
-    """
-    try:
-        obj_id = ObjectId(user_id)
-    except InvalidId:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid user ID"
-        )
+    update_result = await mongodb.db[settings.USER_COLLECTION].update_one({"_id": object_id}, {"$set": {"profile": profile_details.model_dump(), "updated_at": _utc_now_iso()}})  # Persist profile update and timestamp
+    if update_result.matched_count == 0:  # Check if target user existed
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")  # Raise 404 when user is missing
 
-    user = await mongodb.db[settings.USER_COLLECTION].find_one({"_id": obj_id})
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
+    updated_user = await mongodb.db[settings.USER_COLLECTION].find_one({"_id": object_id})  # Read back user after update
+    if updated_user is None or not updated_user.get("profile"):  # Validate profile exists after update
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to retrieve updated profile")  # Raise 500 for unexpected persistence/read issue
 
-    profile_data = user.get("profile")
-    if not profile_data:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="profile not found"
-        )
+    return UserProfileResponse.model_validate(updated_user["profile"])  # Return validated profile response model
 
-    return UserProfileResponse.model_validate(profile_data)
+
+async def get_user_profile(user_id: str) -> UserProfileResponse:  # Fetch authenticated user's profile document
+    try:  # Start ObjectId conversion validation
+        object_id = ObjectId(user_id)  # Convert incoming user ID to Mongo ObjectId
+    except InvalidId:  # Catch invalid ID type/format
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user ID")  # Raise 400 for invalid user ID
+
+    user = await mongodb.db[settings.USER_COLLECTION].find_one({"_id": object_id})  # Fetch user document by ID
+    if user is None:  # Handle missing user case
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")  # Raise 404 when user record does not exist
+
+    profile_data = user.get("profile")  # Extract profile subdocument
+    if not profile_data:  # Handle empty/missing profile case
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")  # Raise 404 when profile is not yet completed
+
+    return UserProfileResponse.model_validate(profile_data)  # Return schema-validated profile data

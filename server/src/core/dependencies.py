@@ -1,45 +1,37 @@
-from fastapi.params import Depends
-from fastapi.security import OAuth2PasswordBearer
-from fastapi import HTTPException,status
+# File: server/src/core/dependencies.py  # Full file path comment as requested
 
-from src.core.security import decode_token
-from src.core.config import settings
-from src.db import mongodb
+from typing import Any, Dict  # Import typing helpers for structured user return values
+from fastapi import Depends, HTTPException, status  # Import dependency system and HTTP error helpers
+from fastapi.security import OAuth2PasswordBearer  # Import bearer-token extractor for protected routes
+from src.core.config import settings  # Import app settings for API prefix values
+from src.core.security import decode_token  # Import JWT decoding/verification helper
+from src.db import mongodb  # Import MongoDB database handle module
 
-# This `tokenUrl` ONLY affects Swagger UI's Authorize button location
-# It does NOT change how your routes work
-search_token_schema = OAuth2PasswordBearer(tokenUrl=settings.PREFIX + "/auth/login/swagger")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.PREFIX}/auth/login/swagger")  # Define token URL for Swagger authorize flow
 
-async def search_user(token: str = Depends(search_token_schema)):
 
-    """
-    :param token:
-    :return: dict
-    Step 1: Check if token is available or not
-    Step 2: Check if token is decodable or not
-    Step 3: Check if email under that decodable token is available or not
-    Step 4: Check if any user with that email exists or not
-    Step 5: Convert the '_id' into String and save it to the user
-    Step 6: Return the user
-    """
-    if not token:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Please login again")
+async def search_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:  # Build reusable async dependency to resolve authenticated user
+    if not token:  # Validate token presence defensively
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing access token")  # Return 401 when no token is provided
 
-    payload = decode_token(token)
+    payload = decode_token(token)  # Decode JWT and verify signature/expiration
+    if payload is None:  # Handle invalid or expired JWT
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")  # Return 401 for bad token
 
-    if payload is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="Invalid or expired token")
+    email = payload.get("sub")  # Extract subject claim (we store user email here)
+    if not isinstance(email, str) or not email.strip():  # Validate subject structure and non-empty value
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")  # Return 401 for malformed JWT payload
 
-    email = payload['sub']
-    if not email:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="Invalid token payload")
+    user = await mongodb.db[settings.USER_COLLECTION].find_one({"email": email})  # Fetch user document by JWT subject email
+    if user is None:  # Handle deleted/missing user record case
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")  # Return 401 to avoid leaking account existence details
 
-    user = await mongodb.db[settings.USER_COLLECTION].find_one({"email":email})
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-    if not user.get("refresh_tokens"):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token Login again")
+    if not isinstance(user.get("refresh_tokens"), list):  # Ensure expected DB shape for refresh token list
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid user token store")  # Return 500 for corrupted data structure
 
-    user['_id'] = str(user['_id'])
+    if len(user["refresh_tokens"]) == 0:  # Enforce session validity by requiring active refresh token(s)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired, please login again")  # Return 401 when session has been revoked
 
-    return user
+    user["_id"] = str(user["_id"])  # Convert Mongo ObjectId to string for JSON-safe downstream usage
+    user.pop("hash_password", None)  # Remove password hash from dependency output for safer route consumption
+    return user  # Return sanitized authenticated user object to protected endpoints

@@ -1,55 +1,40 @@
-from fastapi import APIRouter,Depends,HTTPException,status
-from typing import Dict
-from src.core.dependencies import search_user
-from src.services.user_service import get_user_profile,user_profile_update
-from src.schemas.user import UserProfileResponse,UserProfileUpdate
-from src.core.config import settings
-router = APIRouter(prefix= settings.PREFIX + '/profile', tags=['Profile'])
+# File: server/src/api/routes/profile.py  # Full file path comment as requested
 
-@router.post('/profile', response_model=UserProfileResponse, status_code=status.HTTP_200_OK)
-async def update_profile(profile_update: UserProfileUpdate , user: Dict = Depends(search_user)):
-    """
-        Update user profile (onboarding data).
-        Protected by JWT - only the logged-in user can update their own profile.
-        """
-    # current_user comes from JWT decode - it contains "_id" as string
+from typing import Any, Dict  # Import typing helpers for dependency-injected user data
+from fastapi import APIRouter, Depends, HTTPException, status  # Import FastAPI router and HTTP error/status helpers
+from src.core.config import settings  # Import app settings for API prefix
+from src.core.dependencies import search_user  # Import JWT auth dependency for protected profile routes
+from src.schemas.user import UserProfileResponse, UserProfileUpdate  # Import Pydantic v2 profile schemas
+from src.services.user_service import get_user_profile, user_profile_update  # Import profile business logic functions
 
-    try:
-        updated_profile =  await user_profile_update(user['_id'], profile_update)
-        return updated_profile
+router = APIRouter(prefix=f"{settings.PREFIX}/profile", tags=["Profile"])  # Create profile router at /api/profile
 
-    except HTTPException:
-        raise  # Re-raise service exceptions
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update profile: {str(e)}"
-        )
 
-@router.get('/profile', response_model=UserProfileResponse, status_code=status.HTTP_200_OK)
-async def get_profile(user: Dict = Depends(search_user)):
-    """
-        Get current user's profile.
-        Returns 404 if profile not yet filled (onboarding pending).
-        """
-    if not user.get("_id") or user.get("id"):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid user token"
-        )
-    try:
-        profile: UserProfileResponse = await get_user_profile(user['_id'])
-        if profile is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Profile not found. Please complete onboarding."
-            )
-        return profile
+@router.get("", response_model=UserProfileResponse, status_code=status.HTTP_200_OK)  # Define GET /api/profile endpoint
+async def get_profile(user: Dict[str, Any] = Depends(search_user)) -> UserProfileResponse:  # Read current authenticated user's profile
+    user_id = user.get("_id")  # Extract user ID resolved by auth dependency
+    if not isinstance(user_id, str) or not user_id.strip():  # Validate user ID shape before calling service
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid user token")  # Return 401 for broken auth context
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch profile: {str(e)}"
-        )
+    try:  # Start controlled service call block
+        profile = await get_user_profile(user_id)  # Fetch profile from service by authenticated user ID
+        return profile  # Return validated profile response
+    except HTTPException:  # Re-raise known service HTTP errors unchanged
+        raise  # Preserve original status and detail from service layer
+    except Exception as exc:  # Catch unexpected runtime/database exceptions
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to fetch profile: {str(exc)}")  # Return safe 500 response
+
+
+@router.put("", response_model=UserProfileResponse, status_code=status.HTTP_200_OK)  # Define PUT /api/profile endpoint
+async def update_profile(profile_update: UserProfileUpdate, user: Dict[str, Any] = Depends(search_user)) -> UserProfileResponse:  # Update current authenticated user's profile
+    user_id = user.get("_id")  # Extract authenticated user ID from dependency result
+    if not isinstance(user_id, str) or not user_id.strip():  # Validate user ID before service operation
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid user token")  # Return 401 when auth context is malformed
+
+    try:  # Start controlled update operation block
+        updated_profile = await user_profile_update(user_id, profile_update)  # Apply profile update via service layer
+        return updated_profile  # Return updated profile response model
+    except HTTPException:  # Re-raise expected service-level HTTP exceptions
+        raise  # Keep service-provided status code and message
+    except Exception as exc:  # Catch unexpected unhandled exceptions
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to update profile: {str(exc)}")  # Return stable 500 error format
