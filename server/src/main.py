@@ -21,7 +21,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:  # Define async st
 
 app = FastAPI(  # Create FastAPI application instance
     title="MindBridge API",  # Set API title shown in Swagger and ReDoc
-    version="1.0.0",  # Set API semantic version for docs and clients
+    version="0.0.1",  # Set API semantic version for docs and clients
     description="MindBridge backend for authentication, profile management, and wellness workflow services.",  # Set high-level API description
     lifespan=lifespan,  # Register startup/shutdown lifecycle manager
 )  # Finish FastAPI app initialization

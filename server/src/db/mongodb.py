@@ -22,7 +22,8 @@ async def connect_to_mongo() -> None:  # Define async startup function to connec
             serverSelectionTimeoutMS=5000,  # Fail quickly if server is unreachable
             maxPoolSize=50,  # Set reasonable max connection pool size for backend workloads
             minPoolSize=1,  # Keep at least one pooled connection available
-        )  # Finish client configuration
+        )
+        # Finish client configuration
         await client.admin.command("ping")  # Verify server availability with lightweight ping command
         db = client[settings.DATABASE_NAME]  # Bind configured database handle after successful ping
     except PyMongoError as exc:  # Catch MongoDB-specific failures
@@ -41,7 +42,7 @@ async def close_mongo_connection() -> None:  # Define async shutdown function to
 
     if client is None:  # Check whether client is already absent
         db = None  # Ensure db is also reset when no client exists
-        return  # Exit early because there is nothing to close
+        return  # Exit early because there is nothing too close
 
     try:  # Start protected close operation block
         client.close()  # Close MongoDB client and its connection pool
