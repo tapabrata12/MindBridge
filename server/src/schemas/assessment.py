@@ -17,5 +17,16 @@ class PHQ9AssessmentRequest(BaseModel): # Define schema for submitting a complet
     notes: Optional[str] = Field(None, min_length=1, max_length=1000, description="Optional short user note to store with this assessment") # Allow an optional note for additional context
     @field_validator('answers')
     @classmethod
-    def validate_answer_length(cls, value:List[PHQ9QuestionAnswer])-> List[PHQ9QuestionAnswer]:
-        pass
+    def validate_answer_length(cls, values:List[PHQ9QuestionAnswer])-> List[PHQ9QuestionAnswer]:
+        question_ids = [value.question_id for value in values]
+        if set(question_ids) != set(range(1, 10)): # Check that all nine question IDs are unique and present
+            raise ValueError("answers must include each PHQ-9 question_id from 1 through 9 exactly once")  # Raise a clear validation error when duplicates or missing IDs exist
+        return values  # Return the validated answers list unchanged when it passes checks
+
+class PHQ9AssessmentResult(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+    total_score: int = Field(..., ge=0, le=27, description="Total score for this PHQ-9 assessment")
+    severity: PHQ9Severity = Field(..., description="Severity for this PHQ-9 assessment")
+    needs_to_followup: bool = Field(..., description="Whether this PHQ-9 assessment needs to followup")
+    clinical_risk: bool = Field(..., description="Whether this PHQ-9 assessment has a clinical risk")
+    recommendation: str = Field(..., min_length=1, description="Recommendation for this PHQ-9 assessment")
