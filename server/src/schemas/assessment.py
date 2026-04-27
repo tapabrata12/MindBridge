@@ -30,3 +30,23 @@ class PHQ9AssessmentResult(BaseModel):
     needs_to_followup: bool = Field(..., description="Whether this PHQ-9 assessment needs to followup")
     clinical_risk: bool = Field(..., description="Whether this PHQ-9 assessment has a clinical risk")
     recommendation: str = Field(..., min_length=1, description="Recommendation for this PHQ-9 assessment")
+
+class PHQ9AssessmentResponse(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+    assessment_type: Literal["phq9"] = Field(default="phq9",description="Assessment type identifier")  # Mark this response as a PHQ-9 assessment result
+    result: PHQ9AssessmentResult = Field(..., description="Results for this PHQ-9 assessment")
+
+class PHQ9AssessmentState(BaseModel):  # Define normalized state shape used by the LangGraph PHQ-9 flow
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    request:PHQ9AssessmentRequest = Field(..., description="Request for this PHQ-9 assessment")
+    total_score: int = Field(..., ge=0, le=27, description="Total score for this PHQ-9 assessment")
+    severity: PHQ9Severity = Field(..., description="Severity for this PHQ-9 assessment")
+    needs_to_followup: bool = Field(..., description="Whether this PHQ-9 assessment needs to followup")
+    clinical_risk: bool = Field(..., description="Whether this PHQ-9 assessment has a clinical risk")
+    recommendation: str = Field(..., min_length=1, description="Recommendation for this PHQ-9 assessment")
+    @model_validator(mode='after')
+    def calculate_sum(self)-> 'PHQ9AssessmentState':
+        computed_total = sum(item.score for item in self.request.answers)
+        if self.total_score not in (0,computed_total):
+            raise ValueError("Total score for this PHQ-9 assessment must be equal to or greater than 0")
+        return self
