@@ -27,7 +27,7 @@ class PHQ9AssessmentResult(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
     total_score: int = Field(..., ge=0, le=27, description="Total score for this PHQ-9 assessment")
     severity: PHQ9Severity = Field(..., description="Severity for this PHQ-9 assessment")
-    needs_to_followup: bool = Field(..., description="Whether this PHQ-9 assessment needs to followup")
+    needs_to_follow: bool = Field(..., description="Whether this PHQ-9 assessment needs to followup")
     clinical_risk: bool = Field(..., description="Whether this PHQ-9 assessment has a clinical risk")
     recommendation: str = Field(..., min_length=1, description="Recommendation for this PHQ-9 assessment")
 
@@ -41,7 +41,7 @@ class PHQ9AssessmentState(BaseModel):  # Define normalized state shape used by t
     request:PHQ9AssessmentRequest = Field(..., description="Request for this PHQ-9 assessment")
     total_score: int = Field(..., ge=0, le=27, description="Total score for this PHQ-9 assessment")
     severity: PHQ9Severity = Field(..., description="Severity for this PHQ-9 assessment")
-    needs_to_followup: bool = Field(..., description="Whether this PHQ-9 assessment needs to followup")
+    needs_to_follow: bool = Field(..., description="Whether this PHQ-9 assessment needs to followup")
     clinical_risk: bool = Field(..., description="Whether this PHQ-9 assessment has a clinical risk")
     recommendation: str = Field(..., min_length=1, description="Recommendation for this PHQ-9 assessment")
     @model_validator(mode='after')

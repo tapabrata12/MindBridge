@@ -1,25 +1,75 @@
 # File: server/src/services/assessment_service.py
+
+from src.schemas.assessment import PHQ9Severity,PHQ9AssessmentRequest,PHQ9AssessmentResult,PHQ9AssessmentResponse,PHQ9AssessmentState
 from typing import Tuple
-from src.schemas.assessment import PHQ9Severity,PHQ9AssessmentRequest
-def _determine_phq9_severity(total_score:int)->PHQ9Severity:
+def _determine_phq9_severity(total_score: int) -> PHQ9Severity:  # Create helper that maps PHQ-9 total score to standard severity band
     """
-    :param total_score: int
-    :return String: PHQ9Severity
-    :Workings: It takes the total PHQ-9 score and returns message according to that score
+        :param total_score: int
+        :return String: PHQ9Severity
+        :Workings: It takes the total PHQ-9 score and returns message according to that score
+        """
+    if 0 <= total_score <= 4:  # Check minimal depression score range
+        return "minimal"  # Return minimal severity label
+    if 5 <= total_score <= 9:  # Check mild depression score range
+        return "mild"  # Return mild severity label
+    if 10 <= total_score <= 14:  # Check moderate depression score range
+        return "moderate"  # Return moderate severity label
+    if 15 <= total_score <= 19:  # Check moderately severe depression score range
+        return "moderately_severe"  # Return moderately severe label
+    return "severe"  # Return severe label for scores 20 through 27
+
+def _evaluate_follow_up_flags(question:PHQ9AssessmentRequest, total_score:int) -> Tuple[bool,bool]:  # Create helper that computes follow-up and crisis flags from request answers
     """
-    if 0 <= total_score <= 4:
-        return PHQ9Severity("minimal")
+    :param question:
+    :param total_score:
+    :return Tuple[bool,bool]:
+    Working: It basically takes the list of dictionary and extract the 9th dictionary question score
+            If score is greater than 0 then one value of Tuple should be true Tuple[??,True]
+            After that we check the total score if score is greater than 10 then Tuple[True,True]
+    """
+    question_9_answer = next((value.score for value in question.answers if value.question_id == 9)) # Read score from PHQ-9 item 9 or default to zero if missing unexpectedly
+    crisis_detection_flag = question_9_answer > 0 # Mark crisis flag true when self-harm item is not answered as "not at all"
+    follow_up = total_score > 10 or crisis_detection_flag # Mark follow-up true for moderate-or-higher total score or any crisis signal
+    return follow_up,crisis_detection_flag # Return both derived flags together
 
-    elif 5 <= total_score <= 9:
-        return PHQ9Severity("mild")
+def _build_recommendation_message(severity:PHQ9Severity, crisis_detection_flag:bool, follow_up: bool,) -> str:
+    """
+    :param severity:
+    :param crisis_detection_flag:
+    :param follow_up:
+    :return:
+    """
+    if crisis_detection_flag:
+        return "Your responses suggest possible immediate safety concerns. Please contact local emergency services or a crisis helpline now, and share this screening with a trusted clinician."  # Return safety-first recommendation message
 
-    elif 10 <= total_score <= 14:
-        return PHQ9Severity("moderate")
+    if follow_up:  # Handle non-crisis but clinically meaningful follow-up path
+        return f"Your PHQ-9 result falls in the {severity.replace('_', ' ')} range. Please schedule a professional mental health follow-up and continue regular check-ins."  # Return structured clinical follow-up recommendation
+    return "Your responses are currently in a lower-severity range. Keep practicing daily self-care and repeat this check-in if symptoms increase."  # Return lower-risk self-monitoring recommendation
 
-    elif 15<= total_score <= 19:
-        return PHQ9Severity("moderately_severe")
+async def score_phq9_assessment(request_data:PHQ9AssessmentRequest)-> PHQ9AssessmentResult:
+    total_score = sum(x.score for x in request_data.answers)
+    severity = _determine_phq9_severity(total_score=total_score)
+    needs_follow,crisis_detection_flag = _evaluate_follow_up_flags(request_data,total_score)
+    recommendation = _build_recommendation_message(severity,crisis_detection_flag,needs_follow)
+    return PHQ9AssessmentResult(
+        total_score=total_score,
+        severity=severity,
+        needs_to_follow=needs_follow,
+        clinical_risk=crisis_detection_flag,
+        recommendation=recommendation
+    )
 
-    return PHQ9Severity("severe")
+async def run_phq9_assessment(request_data: PHQ9AssessmentRequest)-> PHQ9AssessmentResponse:
+    result = await score_phq9_assessment(request_data)
+    return PHQ9AssessmentResponse(result=result)
 
-def _evaluate_follow_up_flags(question:PHQ9AssessmentRequest):
-    pass
+async def build_phq9_graph_state(request_data:PHQ9AssessmentRequest) -> PHQ9AssessmentState:
+    result = await score_phq9_assessment(request_data=request_data)
+    return PHQ9AssessmentState(
+        request=request_data,
+        total_score=result.total_score,
+        severity=result.severity,
+        needs_to_follow=result.needs_to_follow,
+        clinical_risk=result.clinical_risk,
+        recommendation=result.recommendation
+    )
