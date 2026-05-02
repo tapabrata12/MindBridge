@@ -5,6 +5,7 @@ from typing import AsyncGenerator, Dict  # Import typing helpers for lifespan ge
 from fastapi import FastAPI, status  # Import FastAPI app class and HTTP status codes
 from src.api.routes.auth import router as auth_router  # Import authentication routes
 from src.api.routes.profile import router as profile_router  # Import profile routes
+from src.api.routes.assessment import router as assessment_router# Import Assessment routes
 from src.db.mongodb import close_mongo_connection, connect_to_mongo  # Import async MongoDB lifecycle helpers
 
 
@@ -29,6 +30,7 @@ app = FastAPI(  # Create FastAPI application instance
 
 app.include_router(auth_router)  # Mount authentication routes onto the application
 app.include_router(profile_router)  # Mount profile routes onto the application
+app.include_router(assessment_router) # Mount assessment routes onto the application
 
 
 @app.get("/", status_code=status.HTTP_200_OK)  # Define root endpoint for quick service confirmation
