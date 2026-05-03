@@ -11,7 +11,7 @@ class Settings(BaseSettings):  # Define strongly validated application settings 
     MONGODB_URL: str = Field(..., min_length=10, description="MongoDB connection URL")  # Require MongoDB connection string
     DATABASE_NAME: str = Field(..., min_length=1, description="MongoDB database name")  # Require target database name
     USER_COLLECTION: str = Field(..., min_length=1, description="MongoDB user collection name")  # Require collection name for user documents
-
+    ASSESSMENT_COLLECTION_NAME: str = Field(..., min_length=1, description="Assessment collection name")  # Require collection name for user assessment
     JWT_SECRET: str = Field(..., min_length=32, description="JWT signing secret (minimum 32 characters)")  # Require strong JWT secret length
     JWT_ALGORITHM: str = Field(default="HS256", description="JWT signing algorithm")  # Default JWT algorithm for token signing
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=15, ge=1, le=1440, description="Access token expiry in minutes")  # Set secure practical default and bounds
