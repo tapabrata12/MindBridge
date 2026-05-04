@@ -1,7 +1,17 @@
 # File: server/src/services/assessment_service.py
-
+from fastapi import HTTPException,status
 from src.schemas.assessment import PHQ9Severity,PHQ9AssessmentRequest,PHQ9AssessmentResult,PHQ9AssessmentResponse,PHQ9AssessmentState
+from src.models.assessment import create_phq9_assessment_document
+from src.db import mongodb
+from src.core.config import settings
 from typing import Tuple
+
+"""
+#####################################################################################################
+This part is the calculation part where we try to calculate every field about PHQ-9 assessment
+#####################################################################################################
+"""
+
 def _determine_phq9_severity(total_score: int) -> PHQ9Severity:  # Create helper that maps PHQ-9 total score to standard severity band
     """
         :param total_score: int
@@ -73,3 +83,25 @@ async def build_phq9_graph_state(request_data:PHQ9AssessmentRequest) -> PHQ9Asse
         clinical_risk=result.clinical_risk,
         recommendation=result.recommendation
     )
+
+
+"""
+#####################################################################################################
+This part is where we try to save every field about PHQ-9 assessment into MONGODB
+#####################################################################################################
+"""
+
+async def run_phq9_assessment_and_save(user_id:str,request:PHQ9AssessmentRequest)-> PHQ9AssessmentResponse:
+    if not isinstance(user_id,str) or not user_id.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User id is invalid or empty")
+
+    result = await score_phq9_assessment(request_data=request)
+    mongodb_model = create_phq9_assessment_document(user_id=user_id,request=request,result=result)
+    if mongodb.db is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail="Database connection is not initialized")  # Raise explicit 500 when DB is unavailable.
+
+    insert_result = await mongodb.db[settings.ASSESSMENT_COLLECTION_NAME].insert_one(mongodb_model)
+    if not insert_result.inserted_id:  # Validate insert acknowledgment includes inserted document id.
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail="Failed to save assessment")  # Raise explicit 500 when insert is not acknowledged correctly.
+
+    return PHQ9AssessmentResponse(result=result)
