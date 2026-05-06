@@ -4,7 +4,8 @@ from src.schemas.assessment import PHQ9Severity,PHQ9AssessmentRequest,PHQ9Assess
 from src.models.assessment import create_phq9_assessment_document
 from src.db import mongodb
 from src.core.config import settings
-from typing import Tuple
+from typing import Tuple,List,Any,Dict
+from datetime import datetime
 
 """
 #####################################################################################################
@@ -105,3 +106,82 @@ async def run_phq9_assessment_and_save(user_id:str,request:PHQ9AssessmentRequest
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail="Failed to save assessment")  # Raise explicit 500 when insert is not acknowledged correctly.
 
     return PHQ9AssessmentResponse(result=result)
+
+"""
+#####################################################################################################
+This part is where we try fetch all the calculated history from the DataBase
+#####################################################################################################
+"""
+async def get_phq9_history(
+    user_id: str,
+    limit: int = 20,
+    skip: int = 0
+) -> List[Dict[str, Any]]:
+
+    # Validate user_id
+    if not isinstance(user_id, str) or not user_id.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User id is invalid or empty"
+        )
+
+    # Validate limit
+    if limit < 1 or limit > 100:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Limit must be between 1 and 100"
+        )
+
+    # Validate skip
+    if skip < 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Skip must be 0 or greater"
+        )
+
+    # Check DB connection
+    if mongodb.db is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database connection is not initialized"
+        )
+
+    # Build query
+    query = {
+        "user_id": user_id,
+        "assessment_type": "phq9"
+    }
+
+    # Fetch documents
+    documents = await (
+        mongodb.db[settings.ASSESSMENT_COLLECTION_NAME]
+        .find(query)
+        .sort("document_created", -1)
+        .skip(skip)
+        .limit(limit)
+        .to_list(length=limit)
+    )
+
+    # Transform documents into API-safe response
+    history_items = []
+
+    for doc in documents:
+
+        created_at = doc.get("document_created")
+
+        history_items.append({
+            "assessment_id": str(doc.get("_id")),
+            "assessment_type": doc.get("assessment_type"),
+            "total_score": doc.get("total_score"),
+            "severity": doc.get("severity"),
+            "needs_follow_up": doc.get("needs_follow_up"),
+            "crisis_risk_flag": doc.get("crisis_risk_flag"),
+            "recommendation": doc.get("recommendation"),
+            "created_at": (
+                datetime.fromisoformat(created_at)
+                if isinstance(created_at, str)  # Check if it's a string
+                else created_at  # If it's already a datetime (or None), keep it
+            )
+        })
+
+    return history_items

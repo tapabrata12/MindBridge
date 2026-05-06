@@ -1,12 +1,12 @@
 # File: server/src/api/routes/assessment.py  # Full file path comment as requested
 
-from typing import Any, Dict  # Import typing helpers for authenticated user dependency payload.
+from typing import Any, Dict, List  # Import typing helpers for authenticated user dependency payload.
 from fastapi import APIRouter, Depends, HTTPException, status  # Import FastAPI router, dependency injection, and HTTP error/status tools.
 from src.core.config import settings  # Import application settings for API prefix configuration.
 from src.core.dependencies import search_user  # Import JWT-based current-user dependency for protected routes.
 from src.schemas.assessment import PHQ9AssessmentRequest, PHQ9AssessmentResponse  # Import PHQ-9 request and response schemas.
 from src.services.assessment_service import run_phq9_assessment_and_save  # Import PHQ-9 service function that computes and persists assessment output.
-
+from src.services.assessment_service import get_phq9_history
 router = APIRouter(prefix=f"{settings.PREFIX}/assessment", tags=["Assessment"])  # Create assessment router mounted at /api/assessment.
 
 @router.post("/phq9", response_model=PHQ9AssessmentResponse, status_code=status.HTTP_200_OK)  # Define protected endpoint for PHQ-9 scoring submissions.
@@ -24,3 +24,10 @@ async def submit_phq9_assessment(  # Define async route handler for PHQ-9 reques
         raise  # Preserve status code and detail from known API/service-level errors.
     except Exception:  # Catch any unexpected runtime errors from service or database processing.
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to process PHQ-9 assessment")  # Return safe generic 500 response.
+
+@router.get('/history')
+async def see_history(user = Depends(search_user))-> List[Dict[str,Any]]:
+    user_id = user['_id']
+    doc = await get_phq9_history(user_id=user_id)
+
+    return doc
