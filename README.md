@@ -161,17 +161,6 @@ flowchart TD
     REPORT --> FEEDBACK[Feedback + Longitudinal Loop]
 ```
 
-### Current Implemented Architecture
-
-```mermaid
-flowchart LR
-    CLIENT[Client / Swagger UI] --> FASTAPI[FastAPI App]
-    FASTAPI --> ROUTES[/api/auth/* Routes]
-    ROUTES --> SERVICE[User Service]
-    SERVICE --> SECURITY[JWT + bcrypt]
-    SERVICE --> MONGO[(MongoDB)]
-```
-
 ### Current Request Flow
 
 1. Client calls the FastAPI backend under `/api/auth/*`
