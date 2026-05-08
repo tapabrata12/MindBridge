@@ -1,6 +1,7 @@
 # File: server/src/schemas/assessment.py  # Full file path comment as requested
 from pydantic import BaseModel,model_validator,field_validator,ConfigDict,Field # Import Pydantic v2 tools for schema validation and configuration
 from typing import Optional,Literal,List # Import typing helpers for strict literal values and optional fields
+from datetime import datetime
 
 PHQ9AnswerValue = Literal[0,1,2,3] # Define allowed PHQ-9 answer values where 0=not at all and 3=nearly every day
 PHQ9QuestionID = Literal[1,2,3,4,5,6,7,8,9] # Define strict question identifiers for PHQ-9 questions one through nine
@@ -50,3 +51,28 @@ class PHQ9AssessmentState(BaseModel):  # Define normalized state shape used by t
         if self.total_score not in (0,computed_total):
             raise ValueError("Total score for this PHQ-9 assessment must be equal to or greater than 0")
         return self
+
+"""
+#####################################################################################################
+This part is where we make the schema about the History of PHQ-9 assessment
+#####################################################################################################
+"""
+
+class PHQ9AssessmentHistoryItem(BaseModel):  # Define one safe PHQ-9 history item returned to the frontend.
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)  # Reject unknown output fields and normalize string whitespace.
+    assessment_id: str = Field(..., min_length=1, description="MongoDB assessment document id converted to a string")  # Expose the MongoDB id safely as a plain string.
+    assessment_type: Literal["phq9"] = Field(default="phq9", description="Assessment type identifier")  # Mark each history item as a PHQ-9 record.
+    total_score: int = Field(..., ge=0, le=27, description="Total score for this saved PHQ-9 assessment")  # Return the saved PHQ-9 total score.
+    severity: PHQ9Severity = Field(..., description="Saved severity band for this PHQ-9 assessment")  # Return the saved PHQ-9 severity label.
+    needs_to_follow: bool = Field(..., description="Whether this saved PHQ-9 assessment needs professional follow-up")  # Return the saved follow-up flag.
+    clinical_risk: bool = Field(..., description="Whether this saved PHQ-9 assessment triggered a clinical risk flag")  # Return the saved crisis or clinical-risk flag.
+    recommendation: str = Field(..., min_length=1, description="Saved recommendation for this PHQ-9 assessment")  # Return the saved recommendation text.
+    created_at: Optional[datetime] = Field(None, description="UTC creation timestamp for this saved PHQ-9 assessment")  # Return the saved creation timestamp when available.
+
+class PHQ9AssessmentHistoryResponse(BaseModel):  # Define paginated PHQ-9 history response returned by the history endpoint.
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)  # Reject unknown output fields and normalize string whitespace.
+    assessment_type: Literal["phq9"] = Field(default="phq9", description="Assessment type identifier for this history response")  # Mark the full response as PHQ-9 history.
+    count: int = Field(..., ge=0, description="Number of history items returned in this response")  # Tell the frontend how many items came back.
+    limit: int = Field(..., ge=1, le=100, description="Maximum number of history items requested")  # Echo the requested page size.
+    skip: int = Field(..., ge=0, description="Number of history items skipped before this page")  # Echo the requested pagination offset.
+    items: List[PHQ9AssessmentHistoryItem] = Field(default_factory=list, description="Saved PHQ-9 assessment history items")  # Return the actual history items.

@@ -1,10 +1,10 @@
 # File: server/src/services/assessment_service.py
 from fastapi import HTTPException,status
-from src.schemas.assessment import PHQ9Severity,PHQ9AssessmentRequest,PHQ9AssessmentResult,PHQ9AssessmentResponse,PHQ9AssessmentState
+from src.schemas.assessment import PHQ9Severity,PHQ9AssessmentHistoryItem,PHQ9AssessmentRequest,PHQ9AssessmentResult,PHQ9AssessmentResponse,PHQ9AssessmentState
 from src.models.assessment import create_phq9_assessment_document
 from src.db import mongodb
 from src.core.config import settings
-from typing import Tuple,List,Any,Dict
+from typing import Tuple,List
 from datetime import datetime
 
 """
@@ -116,7 +116,7 @@ async def get_phq9_history(
     user_id: str,
     limit: int = 20,
     skip: int = 0
-) -> List[Dict[str, Any]]:
+) -> List[PHQ9AssessmentHistoryItem]:
 
     # Validate user_id
     if not isinstance(user_id, str) or not user_id.strip():
@@ -163,25 +163,25 @@ async def get_phq9_history(
     )
 
     # Transform documents into API-safe response
-    history_items = []
+    history_items: List[PHQ9AssessmentHistoryItem] = []
 
     for doc in documents:
 
-        created_at = doc.get("document_created")
+        created_at = doc.get("document_created")  # Read creation timestamp from the saved MongoDB document.
 
-        history_items.append({
-            "assessment_id": str(doc.get("_id")),
-            "assessment_type": doc.get("assessment_type"),
-            "total_score": doc.get("total_score"),
-            "severity": doc.get("severity"),
-            "needs_follow_up": doc.get("needs_follow_up"),
-            "crisis_risk_flag": doc.get("crisis_risk_flag"),
-            "recommendation": doc.get("recommendation"),
-            "created_at": (
+        history_items.append(PHQ9AssessmentHistoryItem(
+            assessment_id=str(doc.get("_id")),
+            assessment_type=doc.get("assessment_type", "phq9"),
+            total_score=doc.get("total_score"),
+            severity=doc.get("severity"),
+            needs_to_follow=doc.get("needs_to_follow"),
+            clinical_risk=doc.get("clinical_risk"),
+            recommendation=doc.get("recommendation"),
+            created_at=(
                 datetime.fromisoformat(created_at)
-                if isinstance(created_at, str)  # Check if it's a string
-                else created_at  # If it's already a datetime (or None), keep it
+                if isinstance(created_at, str)  # Convert stored ISO string timestamps into datetime objects for Pydantic serialization.
+                else created_at  # Keep datetime or None values unchanged when MongoDB already returned them in that shape.
             )
-        })
+        ))
 
     return history_items

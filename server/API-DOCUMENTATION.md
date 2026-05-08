@@ -1,6 +1,6 @@
 # MindBridge API Documentation
 
-Last verified against backend code: April 23, 2026.
+Last verified against backend code: May 8, 2026.
 
 Base URL:
 
@@ -35,6 +35,8 @@ The backend uses JWT access tokens and server-stored refresh tokens.
 | `POST` | `/api/auth/logout` | Yes | Revoke all sessions for the authenticated user. |
 | `GET` | `/api/profile` | Yes | Get the authenticated user's profile. |
 | `PUT` | `/api/profile` | Yes | Replace the authenticated user's profile. |
+| `POST` | `/api/assessment/phq9` | Yes | Score and save a PHQ-9 assessment. |
+| `GET` | `/api/assessment/phq9/history` | Yes | Get paginated PHQ-9 assessment history. |
 
 ## Token Model
 
@@ -476,6 +478,195 @@ curl -X PUT http://localhost:8000/api/profile \
   }'
 ```
 
+## Assessment Endpoints
+
+Assessment endpoints are protected and currently support PHQ-9 only.
+
+### POST /api/assessment/phq9
+
+Scores a PHQ-9 submission, saves it to the assessment collection, and returns the computed result.
+
+Auth required: Yes
+
+Headers:
+
+```text
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+Request body:
+
+```json
+{
+  "answers": [
+    {"question_id": 1, "score": 1},
+    {"question_id": 2, "score": 2},
+    {"question_id": 3, "score": 1},
+    {"question_id": 4, "score": 2},
+    {"question_id": 5, "score": 1},
+    {"question_id": 6, "score": 2},
+    {"question_id": 7, "score": 1},
+    {"question_id": 8, "score": 1},
+    {"question_id": 9, "score": 1}
+  ],
+  "notes": "Symptoms have been worse this week."
+}
+```
+
+Request constraints:
+
+| Field | Type | Required | Constraint |
+|---|---|---:|---|
+| `answers` | array | Yes | Exactly 9 items. |
+| `answers[].question_id` | integer | Yes | Must include each value `1` through `9` exactly once. |
+| `answers[].score` | integer | Yes | Allowed values: `0`, `1`, `2`, `3`. |
+| `notes` | string or null | No | If provided, 1 to 1000 characters. |
+
+Scoring behavior:
+
+- `total_score` is the sum of all 9 answer scores.
+- `severity` is derived from the total score:
+
+| Total score | Severity |
+|---:|---|
+| `0` to `4` | `minimal` |
+| `5` to `9` | `mild` |
+| `10` to `14` | `moderate` |
+| `15` to `19` | `moderately_severe` |
+| `20` to `27` | `severe` |
+
+- `clinical_risk` is `true` when question `9` has a score greater than `0`.
+- `needs_to_follow` is `true` when `total_score > 10` or `clinical_risk` is `true`.
+- The recommendation message changes based on the follow-up and crisis-risk flags.
+
+Important current behavior:
+
+- The route saves the computed assessment result to MongoDB.
+- The saved document includes answers, score, severity, follow-up flags, recommendation, and timestamps.
+- The request schema accepts `notes`, but the current save model does not persist or return `notes`.
+- Extra request fields are rejected.
+
+Success response `200`:
+
+```json
+{
+  "assessment_type": "phq9",
+  "result": {
+    "total_score": 12,
+    "severity": "moderate",
+    "needs_to_follow": true,
+    "clinical_risk": true,
+    "recommendation": "Your responses suggest possible immediate safety concerns. Please contact local emergency services or a crisis helpline now, and share this screening with a trusted clinician."
+  }
+}
+```
+
+Errors:
+
+| Status | Meaning | Example detail |
+|---:|---|---|
+| `401` | Missing, invalid, expired, or revoked session | `Invalid or expired token` / `Session expired, please login again` |
+| `400` | Authenticated user ID is malformed | `User id is invalid or empty` |
+| `422` | Request validation failed | FastAPI validation error array |
+| `500` | Database or processing failure | `Database connection is not initialized` / `Failed to save assessment` |
+
+Example:
+
+```bash
+curl -X POST http://localhost:8000/api/assessment/phq9 \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "answers": [
+      {"question_id": 1, "score": 1},
+      {"question_id": 2, "score": 2},
+      {"question_id": 3, "score": 1},
+      {"question_id": 4, "score": 2},
+      {"question_id": 5, "score": 1},
+      {"question_id": 6, "score": 2},
+      {"question_id": 7, "score": 1},
+      {"question_id": 8, "score": 1},
+      {"question_id": 9, "score": 1}
+    ],
+    "notes": "Symptoms have been worse this week."
+  }'
+```
+
+### GET /api/assessment/phq9/history
+
+Returns paginated PHQ-9 assessment history for the authenticated user.
+
+Auth required: Yes
+
+Headers:
+
+```text
+Authorization: Bearer <access_token>
+```
+
+Query parameters:
+
+| Name | Type | Required | Default | Constraint |
+|---|---|---:|---:|---|
+| `limit` | integer | No | `20` | `1` to `100` |
+| `skip` | integer | No | `0` | `0` or greater |
+
+Important current behavior:
+
+- Results are filtered by the authenticated user only.
+- Results are sorted by `document_created` descending, so newest items are returned first.
+- The response includes only persisted result metadata, not the original answers or request notes.
+
+Success response `200`:
+
+```json
+{
+  "assessment_type": "phq9",
+  "count": 2,
+  "limit": 20,
+  "skip": 0,
+  "items": [
+    {
+      "assessment_id": "681bf5e0c0a6c43c09b2f101",
+      "assessment_type": "phq9",
+      "total_score": 12,
+      "severity": "moderate",
+      "needs_to_follow": true,
+      "clinical_risk": false,
+      "recommendation": "Your PHQ-9 result falls in the moderate range. Please schedule a professional mental health follow-up and continue regular check-ins.",
+      "created_at": "2026-05-08T03:20:15.123456+00:00"
+    },
+    {
+      "assessment_id": "681bf490c0a6c43c09b2f0ff",
+      "assessment_type": "phq9",
+      "total_score": 7,
+      "severity": "mild",
+      "needs_to_follow": false,
+      "clinical_risk": false,
+      "recommendation": "Your responses are currently in a lower-severity range. Keep practicing daily self-care and repeat this check-in if symptoms increase.",
+      "created_at": "2026-05-07T17:42:08.481922+00:00"
+    }
+  ]
+}
+```
+
+Errors:
+
+| Status | Meaning | Example detail |
+|---:|---|---|
+| `401` | Missing, invalid, expired, or revoked session | `Invalid or expired token` / `Session expired, please login again` |
+| `400` | Authenticated user ID is malformed | `User id is invalid or empty` |
+| `422` | Query parameter validation failed | FastAPI validation error array |
+| `500` | Database or history retrieval failure | `Database connection is not initialized` / `Failed to fetch PHQ-9 assessment history` |
+
+Example:
+
+```bash
+curl "http://localhost:8000/api/assessment/phq9/history?limit=20&skip=0" \
+  -H "Authorization: Bearer <access_token>"
+```
+
 ## Data Schemas
 
 ### UserCreate
@@ -594,6 +785,114 @@ Returned by `GET /api/profile` and `PUT /api/profile`.
 }
 ```
 
+### PHQ9QuestionAnswer
+
+Used inside `PHQ9AssessmentRequest.answers`.
+
+| Field | Type | Required | Allowed values / range |
+|---|---|---:|---|
+| `question_id` | integer | Yes | `1` through `9` |
+| `score` | integer | Yes | `0`, `1`, `2`, `3` |
+
+### PHQ9AssessmentRequest
+
+Used by `POST /api/assessment/phq9`.
+
+```json
+{
+  "answers": [
+    {"question_id": 1, "score": 1},
+    {"question_id": 2, "score": 2},
+    {"question_id": 3, "score": 1},
+    {"question_id": 4, "score": 2},
+    {"question_id": 5, "score": 1},
+    {"question_id": 6, "score": 2},
+    {"question_id": 7, "score": 1},
+    {"question_id": 8, "score": 1},
+    {"question_id": 9, "score": 1}
+  ],
+  "notes": "Symptoms have been worse this week."
+}
+```
+
+Rules:
+
+- `answers` must contain exactly 9 items.
+- The set of `question_id` values must be exactly `1` through `9`, with no duplicates or omissions.
+- Each `score` must be one of `0`, `1`, `2`, or `3`.
+- `notes` is optional; if provided, it must be 1 to 1000 characters.
+- Unknown fields are rejected.
+- String whitespace is stripped.
+
+### PHQ9AssessmentResult
+
+Returned as the `result` field in `PHQ9AssessmentResponse`.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `total_score` | integer | Sum of all 9 PHQ-9 answer scores, from `0` to `27`. |
+| `severity` | string | One of `minimal`, `mild`, `moderate`, `moderately_severe`, `severe`. |
+| `needs_to_follow` | boolean | `true` when `total_score > 10` or question `9` has a score greater than `0`. |
+| `clinical_risk` | boolean | `true` when question `9` has a score greater than `0`. |
+| `recommendation` | string | Computed guidance message based on severity and risk flags. |
+
+### PHQ9AssessmentResponse
+
+Returned by `POST /api/assessment/phq9`.
+
+```json
+{
+  "assessment_type": "phq9",
+  "result": {
+    "total_score": 12,
+    "severity": "moderate",
+    "needs_to_follow": true,
+    "clinical_risk": true,
+    "recommendation": "Your responses suggest possible immediate safety concerns. Please contact local emergency services or a crisis helpline now, and share this screening with a trusted clinician."
+  }
+}
+```
+
+### PHQ9AssessmentHistoryItem
+
+Used inside `PHQ9AssessmentHistoryResponse.items`.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `assessment_id` | string | MongoDB assessment document ID as a string. |
+| `assessment_type` | string | Always `phq9`. |
+| `total_score` | integer | Saved PHQ-9 total score. |
+| `severity` | string | Saved severity label. |
+| `needs_to_follow` | boolean | Saved follow-up flag. |
+| `clinical_risk` | boolean | Saved clinical-risk flag. |
+| `recommendation` | string | Saved recommendation text. |
+| `created_at` | ISO datetime string or null | Saved creation timestamp when available. |
+
+### PHQ9AssessmentHistoryResponse
+
+Returned by `GET /api/assessment/phq9/history`.
+
+```json
+{
+  "assessment_type": "phq9",
+  "count": 2,
+  "limit": 20,
+  "skip": 0,
+  "items": [
+    {
+      "assessment_id": "681bf5e0c0a6c43c09b2f101",
+      "assessment_type": "phq9",
+      "total_score": 12,
+      "severity": "moderate",
+      "needs_to_follow": true,
+      "clinical_risk": false,
+      "recommendation": "Your PHQ-9 result falls in the moderate range. Please schedule a professional mental health follow-up and continue regular check-ins.",
+      "created_at": "2026-05-08T03:20:15.123456+00:00"
+    }
+  ]
+}
+```
+
 ## Error Format
 
 Most application errors use FastAPI's standard error envelope:
@@ -638,9 +937,11 @@ Common status codes:
 2. Store the returned `access_token` for API authorization.
 3. Store the returned `refresh_token` securely.
 4. Call protected endpoints with `Authorization: Bearer <access_token>`.
-5. When access expires, call `POST /api/auth/refresh` with the current refresh token.
-6. Replace both stored tokens with the response from refresh.
-7. On logout, call `POST /api/auth/logout` and clear local token state.
+5. Submit PHQ-9 assessments with `POST /api/assessment/phq9` when needed.
+6. Read saved PHQ-9 history with `GET /api/assessment/phq9/history`.
+7. When access expires, call `POST /api/auth/refresh` with the current refresh token.
+8. Replace both stored tokens with the response from refresh.
+9. On logout, call `POST /api/auth/logout` and clear local token state.
 
 Example sequence:
 
@@ -656,6 +957,27 @@ curl -X PUT http://localhost:8000/api/profile \
   -H "Authorization: Bearer <access_token>" \
   -H "Content-Type: application/json" \
   -d '{"age":28,"gender":"female","occupation":"working","sleep_hours":7,"social_support":"medium","life_events":["changed jobs"]}'
+
+curl -X POST http://localhost:8000/api/assessment/phq9 \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "answers": [
+      {"question_id":1,"score":1},
+      {"question_id":2,"score":2},
+      {"question_id":3,"score":1},
+      {"question_id":4,"score":2},
+      {"question_id":5,"score":1},
+      {"question_id":6,"score":2},
+      {"question_id":7,"score":1},
+      {"question_id":8,"score":1},
+      {"question_id":9,"score":1}
+    ],
+    "notes":"Symptoms have been worse this week."
+  }'
+
+curl "http://localhost:8000/api/assessment/phq9/history?limit=20&skip=0" \
+  -H "Authorization: Bearer <access_token>"
 
 curl -X POST http://localhost:8000/api/auth/refresh \
   -H "Content-Type: application/json" \
