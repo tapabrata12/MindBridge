@@ -31,6 +31,7 @@ class PHQ9AssessmentResult(BaseModel):
     needs_to_follow: bool = Field(..., description="Whether this PHQ-9 assessment needs to followup")
     clinical_risk: bool = Field(..., description="Whether this PHQ-9 assessment has a clinical risk")
     recommendation: str = Field(..., min_length=1, description="Recommendation for this PHQ-9 assessment")
+    crisis_support: Optional[PHQ9CrisisSupport] = Field(default=None, description="Structured crisis resources when clinical_risk is true")
 
 class PHQ9AssessmentResponse(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
@@ -45,11 +46,12 @@ class PHQ9AssessmentState(BaseModel):  # Define normalized state shape used by t
     needs_to_follow: bool = Field(..., description="Whether this PHQ-9 assessment needs to followup")
     clinical_risk: bool = Field(..., description="Whether this PHQ-9 assessment has a clinical risk")
     recommendation: str = Field(..., min_length=1, description="Recommendation for this PHQ-9 assessment")
+    crisis_support: Optional[PHQ9CrisisSupport] = Field(default=None, description="Structured crisis resources when clinical_risk is true")
     @model_validator(mode='after')
     def calculate_sum(self)-> 'PHQ9AssessmentState':
         computed_total = sum(item.score for item in self.request.answers)
-        if self.total_score not in (0,computed_total):
-            raise ValueError("Total score for this PHQ-9 assessment must be equal to or greater than 0")
+        if self.total_score != computed_total:
+            raise ValueError("Total score for this PHQ-9 assessment must equal the sum of all answer scores")
         return self
 
 """
@@ -67,6 +69,8 @@ class PHQ9AssessmentHistoryItem(BaseModel):  # Define one safe PHQ-9 history ite
     needs_to_follow: bool = Field(..., description="Whether this saved PHQ-9 assessment needs professional follow-up")  # Return the saved follow-up flag.
     clinical_risk: bool = Field(..., description="Whether this saved PHQ-9 assessment triggered a clinical risk flag")  # Return the saved crisis or clinical-risk flag.
     recommendation: str = Field(..., min_length=1, description="Saved recommendation for this PHQ-9 assessment")  # Return the saved recommendation text.
+    notes: Optional[str] = Field(default=None, description="Optional user note saved with this PHQ-9 assessment")  # Return the saved note when the user submitted one.
+    crisis_support: Optional[PHQ9CrisisSupport] = Field(default=None, description="Saved crisis resources for this assessment when present")  # Return saved safety resources when the assessment triggered them.
     created_at: Optional[datetime] = Field(None, description="UTC creation timestamp for this saved PHQ-9 assessment")  # Return the saved creation timestamp when available.
 
 class PHQ9AssessmentHistoryResponse(BaseModel):  # Define paginated PHQ-9 history response returned by the history endpoint.
@@ -76,3 +80,20 @@ class PHQ9AssessmentHistoryResponse(BaseModel):  # Define paginated PHQ-9 histor
     limit: int = Field(..., ge=1, le=100, description="Maximum number of history items requested")  # Echo the requested page size.
     skip: int = Field(..., ge=0, description="Number of history items skipped before this page")  # Echo the requested pagination offset.
     items: List[PHQ9AssessmentHistoryItem] = Field(default_factory=list, description="Saved PHQ-9 assessment history items")  # Return the actual history items.
+
+"""
+#####################################################################################################
+This part is where we make the crisis support part where we define the crisis center info
+#####################################################################################################
+"""
+class CrisisResource(BaseModel):  # Define one crisis-support contact/resource returned by safety-aware responses
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)  # Reject unknown fields and normalize strings for API safety
+    name: str = Field(..., min_length=1, description="Crisis support resource name")  # Store the public name of the helpline or emergency resource
+    contact: str = Field(..., min_length=1, description="Phone number or emergency contact instruction")  # Store the phone number or contact instruction
+    region: str = Field(..., min_length=1, description="Region where this crisis resource applies")  # Store the region so the frontend can label resources clearly
+
+class PHQ9CrisisSupport(BaseModel):  # Define structured safety guidance returned when PHQ-9 item 9 signals risk
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)  # Reject unknown fields and normalize strings for stable output
+    crisis_detected: bool = Field(default=True, description="Whether this response triggered crisis support")  # Tell clients that normal flow should be interrupted
+    message: str = Field(..., min_length=1, description="Safety-first message to show immediately")  # Store the main safety message for the user
+    resources: List[CrisisResource] = Field(default_factory=list, description="Crisis support resources to surface")  # Store one or more crisis resources for immediate display

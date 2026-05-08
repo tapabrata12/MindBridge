@@ -275,9 +275,10 @@ The backend reads configuration from `server/.env` through Pydantic settings.
 | `MONGODB_URL` | Yes | None | MongoDB connection string |
 | `DATABASE_NAME` | Yes | None | MongoDB database name |
 | `USER_COLLECTION` | Yes | None | MongoDB collection for user documents |
+| `ASSESSMENT_COLLECTION_NAME` | Yes | None | MongoDB collection for assessment documents |
 | `JWT_SECRET` | Yes | None | Secret used to sign JWTs |
 | `JWT_ALGORITHM` | No | `HS256` | JWT signing algorithm |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | No | `1` | Access token lifetime in minutes |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | No | `15` | Access token lifetime in minutes |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | No | `7` | Refresh token lifetime in days |
 
 ### Example `.env`
@@ -287,22 +288,22 @@ PREFIX=/api
 MONGODB_URL=mongodb+srv://<username>:<password>@<cluster>/<database>?retryWrites=true&w=majority
 DATABASE_NAME=mindbridge
 USER_COLLECTION=patient
+ASSESSMENT_COLLECTION_NAME=assessments
 JWT_SECRET=<replace-with-a-long-random-secret>
 JWT_ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=1
+ACCESS_TOKEN_EXPIRE_MINUTES=15
 REFRESH_TOKEN_EXPIRE_DAYS=7
 ```
 
 ### Configuration Notes
 
 - Do not commit real secrets or live database credentials
-- The current code defaults the access token lifetime to `1` minute
-- The product specification recommends a `15` minute access token in the target architecture
-- Refresh token rotation is not implemented yet; refresh reuse is validated against the stored token list
+- The current code defaults the access token lifetime to `15` minutes
+- Refresh token rotation is implemented; refresh reuse is validated against the stored token list
 
 ## API Overview
 
-The backend currently exposes authentication-focused endpoints only.
+The backend currently exposes authentication, profile, and PHQ-9 assessment endpoints.
 
 | Method | Path | Description |
 |---|---|---|
@@ -404,10 +405,8 @@ The README intentionally separates implemented behavior from planned behavior. A
 - No frontend application is committed in this repository snapshot
 - No LangGraph, ChromaDB, embedding, or LLM integration code is present
 - No clinic finder, notification, feedback, or follow-up modules are present
-- No project-owned automated test suite is committed yet
-- No `.env.example` template is present
-- Access token TTL is currently `1` minute in code, while the product spec discusses `15` minutes
-- Crisis interception is documented as mandatory but is not implemented in the current backend routes
+- Only focused backend unit tests are present; broader integration and frontend tests are still missing
+- Chat-route crisis interception middleware is still missing; PHQ-9 item 9 now returns structured crisis support
 
 ## License
 

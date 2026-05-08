@@ -18,9 +18,16 @@ async def search_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:  #
     if payload is None:  # Handle invalid or expired JWT
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")  # Return 401 for bad token
 
+    token_type = payload.get("type")  # Read the explicit JWT type claim from the decoded token
+    if token_type != "access":  # Protected routes must only accept short-lived access tokens
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Access token required")  # Reject refresh tokens on protected routes
+
     email = payload.get("sub")  # Extract subject claim (we store user email here)
     if not isinstance(email, str) or not email.strip():  # Validate subject structure and non-empty value
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")  # Return 401 for malformed JWT payload
+
+    if mongodb.db is None:  # Make database initialization failure explicit before collection access
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database connection is not initialized")  # Return stable 500 when app startup did not initialize MongoDB
 
     user = await mongodb.db[settings.USER_COLLECTION].find_one({"email": email})  # Fetch user document by JWT subject email
     if user is None:  # Handle deleted/missing user record case

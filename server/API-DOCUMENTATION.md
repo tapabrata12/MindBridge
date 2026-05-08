@@ -537,14 +537,14 @@ Scoring behavior:
 | `20` to `27` | `severe` |
 
 - `clinical_risk` is `true` when question `9` has a score greater than `0`.
-- `needs_to_follow` is `true` when `total_score > 10` or `clinical_risk` is `true`.
+- `needs_to_follow` is `true` when `total_score >= 10` or `clinical_risk` is `true`.
 - The recommendation message changes based on the follow-up and crisis-risk flags.
+- `crisis_support` is included when `clinical_risk` is `true`.
 
 Important current behavior:
 
 - The route saves the computed assessment result to MongoDB.
-- The saved document includes answers, score, severity, follow-up flags, recommendation, and timestamps.
-- The request schema accepts `notes`, but the current save model does not persist or return `notes`.
+- The saved document includes answers, notes, score, severity, follow-up flags, recommendation, crisis support, and timestamps.
 - Extra request fields are rejected.
 
 Success response `200`:
@@ -557,7 +557,28 @@ Success response `200`:
     "severity": "moderate",
     "needs_to_follow": true,
     "clinical_risk": true,
-    "recommendation": "Your responses suggest possible immediate safety concerns. Please contact local emergency services or a crisis helpline now, and share this screening with a trusted clinician."
+    "recommendation": "Your responses suggest possible immediate safety concerns. Please contact local emergency services or a crisis helpline now, and share this screening with a trusted clinician.",
+    "crisis_support": {
+      "crisis_detected": true,
+      "message": "Your answer suggests possible self-harm risk. Please contact emergency services or a crisis helpline now, and reach out to someone you trust.",
+      "resources": [
+        {
+          "name": "iCall India",
+          "contact": "9152987821",
+          "region": "India"
+        },
+        {
+          "name": "Vandrevala Foundation",
+          "contact": "1860-2662-345",
+          "region": "India"
+        },
+        {
+          "name": "Local emergency services",
+          "contact": "Contact your local emergency number immediately if you are in immediate danger",
+          "region": "Local"
+        }
+      ]
+    }
   }
 }
 ```
@@ -616,7 +637,7 @@ Important current behavior:
 
 - Results are filtered by the authenticated user only.
 - Results are sorted by `document_created` descending, so newest items are returned first.
-- The response includes only persisted result metadata, not the original answers or request notes.
+- The response includes persisted result metadata, saved notes, and crisis support when present.
 
 Success response `200`:
 
@@ -635,6 +656,8 @@ Success response `200`:
       "needs_to_follow": true,
       "clinical_risk": false,
       "recommendation": "Your PHQ-9 result falls in the moderate range. Please schedule a professional mental health follow-up and continue regular check-ins.",
+      "notes": "Symptoms have been worse this week.",
+      "crisis_support": null,
       "created_at": "2026-05-08T03:20:15.123456+00:00"
     },
     {
@@ -645,6 +668,8 @@ Success response `200`:
       "needs_to_follow": false,
       "clinical_risk": false,
       "recommendation": "Your responses are currently in a lower-severity range. Keep practicing daily self-care and repeat this check-in if symptoms increase.",
+      "notes": null,
+      "crisis_support": null,
       "created_at": "2026-05-07T17:42:08.481922+00:00"
     }
   ]
@@ -832,9 +857,10 @@ Returned as the `result` field in `PHQ9AssessmentResponse`.
 |---|---|---|
 | `total_score` | integer | Sum of all 9 PHQ-9 answer scores, from `0` to `27`. |
 | `severity` | string | One of `minimal`, `mild`, `moderate`, `moderately_severe`, `severe`. |
-| `needs_to_follow` | boolean | `true` when `total_score > 10` or question `9` has a score greater than `0`. |
+| `needs_to_follow` | boolean | `true` when `total_score >= 10` or question `9` has a score greater than `0`. |
 | `clinical_risk` | boolean | `true` when question `9` has a score greater than `0`. |
 | `recommendation` | string | Computed guidance message based on severity and risk flags. |
+| `crisis_support` | object or null | Structured crisis guidance and helplines when `clinical_risk` is `true`. |
 
 ### PHQ9AssessmentResponse
 
@@ -848,7 +874,28 @@ Returned by `POST /api/assessment/phq9`.
     "severity": "moderate",
     "needs_to_follow": true,
     "clinical_risk": true,
-    "recommendation": "Your responses suggest possible immediate safety concerns. Please contact local emergency services or a crisis helpline now, and share this screening with a trusted clinician."
+    "recommendation": "Your responses suggest possible immediate safety concerns. Please contact local emergency services or a crisis helpline now, and share this screening with a trusted clinician.",
+    "crisis_support": {
+      "crisis_detected": true,
+      "message": "Your answer suggests possible self-harm risk. Please contact emergency services or a crisis helpline now, and reach out to someone you trust.",
+      "resources": [
+        {
+          "name": "iCall India",
+          "contact": "9152987821",
+          "region": "India"
+        },
+        {
+          "name": "Vandrevala Foundation",
+          "contact": "1860-2662-345",
+          "region": "India"
+        },
+        {
+          "name": "Local emergency services",
+          "contact": "Contact your local emergency number immediately if you are in immediate danger",
+          "region": "Local"
+        }
+      ]
+    }
   }
 }
 ```
@@ -866,6 +913,8 @@ Used inside `PHQ9AssessmentHistoryResponse.items`.
 | `needs_to_follow` | boolean | Saved follow-up flag. |
 | `clinical_risk` | boolean | Saved clinical-risk flag. |
 | `recommendation` | string | Saved recommendation text. |
+| `notes` | string or null | Optional note saved with the assessment. |
+| `crisis_support` | object or null | Saved crisis resources when clinical risk was triggered. |
 | `created_at` | ISO datetime string or null | Saved creation timestamp when available. |
 
 ### PHQ9AssessmentHistoryResponse
