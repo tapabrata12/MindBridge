@@ -252,6 +252,31 @@ uv sync
 uv run uvicorn src.main:app --reload
 ```
 
+### Developer: Running tests
+
+The backend test suite lives under `server/tests/`. To make running tests on Windows easier the repository includes a PowerShell helper script:
+
+- **PowerShell (Windows)** — from the repository root:
+
+```powershell
+.\server\run_tests.ps1
+```
+
+- **Direct (Windows venv)** — set `PYTHONPATH` so `src` imports resolve and run the venv's `pytest`:
+
+```powershell
+$env:PYTHONPATH = 'd:\MindBridge\server'
+& 'd:\MindBridge\server\.venv\Scripts\pytest.exe' -q
+```
+
+- **POSIX (macOS / Linux)**:
+
+```bash
+PYTHONPATH=server ./server/.venv/bin/pytest -q
+```
+
+Note: Running `pytest` from the repo root without `PYTHONPATH` set may raise `ModuleNotFoundError: No module named 'src'`. The helper script sets `PYTHONPATH` for you.
+
 ## Configuration
 
 The backend reads configuration from `server/.env` through Pydantic settings.

@@ -348,6 +348,30 @@ curl -X POST http://localhost:8000/api/auth/logout \
   -H "Authorization: Bearer <access_token>"
 ```
 
+## Developer Notes — Running Tests
+
+Developer helper script `server/run_tests.ps1` sets `PYTHONPATH` and runs `pytest` using the repository virtual environment. Use it from the repository root on Windows:
+
+```powershell
+.\server\run_tests.ps1
+```
+
+Alternatively, set `PYTHONPATH` to `server` and invoke the venv's `pytest` directly:
+
+```powershell
+$env:PYTHONPATH = 'd:\MindBridge\server'
+& 'd:\MindBridge\server\.venv\Scripts\pytest.exe' -q
+```
+
+On POSIX systems:
+
+```bash
+PYTHONPATH=server ./server/.venv/bin/pytest -q
+```
+
+If `pytest` raises `ModuleNotFoundError: No module named 'src'`, ensure `PYTHONPATH` is set to `server` or run using the helper script.
+
+
 ## Profile Endpoints
 
 Profile endpoints use the authenticated user's ID from the access token dependency. Clients do not pass a user ID in the URL.
