@@ -525,7 +525,7 @@ const OverviewPanel = ({ assessment, history, profile, onSetView }) => {
 
       <Panel
         eyebrow="Submission demo path"
-        title="What you can show tomorrow"
+        title="What You are going to see"
         action={
           <Button variant="soft" onClick={() => onSetView('assessment')}>
             Start assessment
