@@ -1,11 +1,17 @@
 # File: server/src/core/config.py  # Full file path comment as requested
 
+from pathlib import Path  # Import Path for stable env file resolution
+
 from pydantic import Field, field_validator  # Import Pydantic field tools and validators
 from pydantic_settings import BaseSettings, SettingsConfigDict  # Import BaseSettings for env-driven config in Pydantic v2
 
 
+BASE_DIR = Path(__file__).resolve().parents[2]  # Resolve project root from src/core/config.py
+ENV_FILE = BASE_DIR / ".env"  # Point settings loading at Server/.env regardless of current working directory
+
+
 class Settings(BaseSettings):  # Define strongly validated application settings model
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")  # Configure env file loading and ignore unrelated env vars
+    model_config = SettingsConfigDict(env_file=ENV_FILE, env_file_encoding="utf-8", extra="ignore")  # Configure env file loading and ignore unrelated env vars
 
     PREFIX: str = Field(..., description="Global API prefix, e.g. /api")  # Require API route prefix from environment
     MONGODB_URL: str = Field(..., min_length=10, description="MongoDB connection URL")  # Require MongoDB connection string
