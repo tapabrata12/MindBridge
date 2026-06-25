@@ -1,6 +1,6 @@
 # MindBridge API Documentation
 
-Last verified against backend code: May 8, 2026.
+Last verified against backend code: June 25, 2026.
 
 Base URL:
 
@@ -37,6 +37,8 @@ The backend uses JWT access tokens and server-stored refresh tokens.
 | `PUT` | `/api/profile` | Yes | Replace the authenticated user's profile. |
 | `POST` | `/api/assessment/phq9` | Yes | Score and save a PHQ-9 assessment. |
 | `GET` | `/api/assessment/phq9/history` | Yes | Get paginated PHQ-9 assessment history. |
+| `POST` | `/api/assessment/phq9/start` | Yes | Start a conversational PHQ-9 flow and receive question 1. |
+| `POST` | `/api/assessment/phq9/continue` | Yes | Submit the next conversational PHQ-9 answer and receive the next question or final result. |
 
 ## Token Model
 
@@ -480,7 +482,10 @@ curl -X PUT http://localhost:8000/api/profile \
 
 ## Assessment Endpoints
 
-Assessment endpoints are protected and currently support PHQ-9 only.
+Assessment endpoints are protected and currently support PHQ-9 only. PHQ-9 is available in two modes:
+
+- Single-shot submission through `POST /api/assessment/phq9`, which scores and saves a completed 9-answer assessment.
+- Conversational flow through `POST /api/assessment/phq9/start` and `POST /api/assessment/phq9/continue`, which asks one question at a time and returns the final score after the ninth answer.
 
 ### POST /api/assessment/phq9
 
@@ -690,6 +695,244 @@ Example:
 ```bash
 curl "http://localhost:8000/api/assessment/phq9/history?limit=20&skip=0" \
   -H "Authorization: Bearer <access_token>"
+```
+
+### POST /api/assessment/phq9/start
+
+Starts a conversational PHQ-9 assessment and returns the first question with the allowed answer choices.
+
+Auth required: Yes
+
+Headers:
+
+```text
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+Request body:
+
+```json
+{
+  "notes": "Symptoms have been worse this week."
+}
+```
+
+Request constraints:
+
+| Field | Type | Required | Constraint |
+|---|---|---:|---|
+| `notes` | string or null | No | If provided, 1 to 1000 characters. |
+
+Important current behavior:
+
+- This endpoint does not save a database document by itself.
+- The response contains an empty `answers` array and `current_question_id: 1`.
+- The frontend should display `assistant_message` and render the numeric choices from `score_options`.
+
+Success response `200`:
+
+```json
+{
+  "assistant_message": "Over the last 2 weeks, how often have you been bothered by: Little interest or pleasure in doing things?",
+  "score_options": {
+    "0": "Not at all",
+    "1": "Several Days",
+    "2": "More that half days",
+    "3": "Nearly everyday"
+  },
+  "current_question_id": 1,
+  "answers": [],
+  "is_complete": false,
+  "needs_answer": true,
+  "result": null,
+  "crisis_support": null,
+  "Error": null
+}
+```
+
+Errors:
+
+| Status | Meaning | Example detail |
+|---:|---|---|
+| `401` | Missing, invalid, expired, or revoked session | `Invalid user token` / `Session expired, please login again` |
+| `422` | Request validation failed | FastAPI validation error array |
+| `500` | Graph or server processing failure | `Failed to start PHQ-9 conversation` |
+
+Example:
+
+```bash
+curl -X POST http://localhost:8000/api/assessment/phq9/start \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"notes":"Symptoms have been worse this week."}'
+```
+
+### POST /api/assessment/phq9/continue
+
+Submits one answer to the conversational PHQ-9 flow. Until nine answers have been collected, the response returns the next question. After the ninth answer, it returns the final scored result.
+
+Auth required: Yes
+
+Headers:
+
+```text
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+Request body:
+
+```json
+{
+  "answers": [
+    {"question_id": 1, "score": 1},
+    {"question_id": 2, "score": 2}
+  ],
+  "incoming_score": 1,
+  "notes": "Symptoms have been worse this week."
+}
+```
+
+Request constraints:
+
+| Field | Type | Required | Constraint |
+|---|---|---:|---|
+| `answers` | array | No | Previously collected PHQ-9 answers. Defaults to an empty array. |
+| `answers[].question_id` | integer | Yes, inside each answer | `1` through `9`. |
+| `answers[].score` | integer | Yes, inside each answer | `0`, `1`, `2`, or `3`. |
+| `incoming_score` | integer | Yes | `0`, `1`, `2`, or `3`. |
+| `notes` | string or null | No | If provided, 1 to 1000 characters. |
+
+Important current behavior:
+
+- The backend assigns the next `question_id` from `len(answers) + 1`; clients should pass back the `answers` array from the previous response unchanged.
+- `incoming_score` is recorded for the current question before the graph decides whether to ask the next question or score the assessment.
+- When the ninth answer is submitted, `is_complete` becomes `true`, `needs_answer` becomes `false`, and `result` contains the scored PHQ-9 output.
+- The conversational endpoint computes a final result but currently does not persist it to MongoDB through `run_phq9_assessment_and_save`.
+
+Intermediate success response `200`:
+
+```json
+{
+  "assistant_message": "Over the last 2 weeks, how often have you been bothered by: Feeling down, depressed, or hopeless?",
+  "score_options": {
+    "0": "Not at all",
+    "1": "Several Days",
+    "2": "More that half days",
+    "3": "Nearly everyday"
+  },
+  "current_question_id": 2,
+  "answers": [
+    {"question_id": 1, "score": 1}
+  ],
+  "is_complete": false,
+  "needs_answer": true,
+  "result": null,
+  "crisis_support": null,
+  "Error": null
+}
+```
+
+Completion response `200`:
+
+```json
+{
+  "assistant_message": "PHQ-9 assessment complete.",
+  "score_options": {
+    "0": "Not at all",
+    "1": "Several Days",
+    "2": "More that half days",
+    "3": "Nearly everyday"
+  },
+  "current_question_id": null,
+  "answers": [
+    {"question_id": 1, "score": 1},
+    {"question_id": 2, "score": 2},
+    {"question_id": 3, "score": 1},
+    {"question_id": 4, "score": 2},
+    {"question_id": 5, "score": 1},
+    {"question_id": 6, "score": 2},
+    {"question_id": 7, "score": 1},
+    {"question_id": 8, "score": 1},
+    {"question_id": 9, "score": 1}
+  ],
+  "is_complete": true,
+  "needs_answer": false,
+  "result": {
+    "total_score": 12,
+    "severity": "moderate",
+    "needs_to_follow": true,
+    "clinical_risk": true,
+    "recommendation": "Your responses suggest possible immediate safety concerns. Please contact local emergency services or a crisis helpline now, and share this screening with a trusted clinician.",
+    "crisis_support": {
+      "crisis_detected": true,
+      "message": "Your answer suggests possible self-harm risk. Please contact emergency services or a crisis helpline now, and reach out to someone you trust.",
+      "resources": [
+        {
+          "name": "iCall India",
+          "contact": "9152987821",
+          "region": "India"
+        },
+        {
+          "name": "Vandrevala Foundation",
+          "contact": "1860-2662-345",
+          "region": "India"
+        },
+        {
+          "name": "Local emergency services",
+          "contact": "Contact your local emergency number immediately if you are in immediate danger",
+          "region": "Local"
+        }
+      ]
+    }
+  },
+  "crisis_support": {
+    "crisis_detected": true,
+    "message": "Your answer suggests possible self-harm risk. Please contact emergency services or a crisis helpline now, and reach out to someone you trust.",
+    "resources": [
+      {
+        "name": "iCall India",
+        "contact": "9152987821",
+        "region": "India"
+      },
+      {
+        "name": "Vandrevala Foundation",
+        "contact": "1860-2662-345",
+        "region": "India"
+      },
+      {
+        "name": "Local emergency services",
+        "contact": "Contact your local emergency number immediately if you are in immediate danger",
+        "region": "Local"
+      }
+    ]
+  },
+  "Error": null
+}
+```
+
+Errors:
+
+| Status | Meaning | Example detail |
+|---:|---|---|
+| `401` | Missing, invalid, expired, or revoked session | `Invalid user token` / `Session expired, please login again` |
+| `422` | Request validation failed | FastAPI validation error array |
+| `500` | Graph or server processing failure | `Failed to continue PHQ-9 conversation` |
+
+Example:
+
+```bash
+curl -X POST http://localhost:8000/api/assessment/phq9/continue \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "answers": [
+      {"question_id":1,"score":1}
+    ],
+    "incoming_score":2,
+    "notes":"Symptoms have been worse this week."
+  }'
 ```
 
 ## Data Schemas
@@ -942,6 +1185,61 @@ Returned by `GET /api/assessment/phq9/history`.
 }
 ```
 
+### PHQ9ConversationStartRequest
+
+Used by `POST /api/assessment/phq9/start`.
+
+```json
+{
+  "notes": "Symptoms have been worse this week."
+}
+```
+
+Rules:
+
+- `notes` is optional.
+- If `notes` is provided, it must be 1 to 1000 characters.
+- Unknown fields are rejected.
+- String whitespace is stripped.
+
+### PHQ9ConversationContinueRequest
+
+Used by `POST /api/assessment/phq9/continue`.
+
+```json
+{
+  "answers": [
+    {"question_id": 1, "score": 1}
+  ],
+  "incoming_score": 2,
+  "notes": "Symptoms have been worse this week."
+}
+```
+
+Rules:
+
+- `answers` is the previously collected answer list. It defaults to an empty array.
+- `incoming_score` is required and must be `0`, `1`, `2`, or `3`.
+- `notes` is optional. If provided, it must be 1 to 1000 characters.
+- Unknown fields are rejected.
+- String whitespace is stripped.
+
+### PHQ9ConversationResponse
+
+Returned by `POST /api/assessment/phq9/start` and `POST /api/assessment/phq9/continue`.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `assistant_message` | string or null | Current question text, or completion message after the ninth answer. |
+| `score_options` | object or null | Answer labels for scores `0` through `3`. |
+| `current_question_id` | integer or null | Active PHQ-9 question number while the flow is incomplete. |
+| `answers` | array | Answers collected so far. |
+| `is_complete` | boolean | Whether all 9 PHQ-9 questions have been answered. |
+| `needs_answer` | boolean | Whether the frontend should display the answer options. |
+| `result` | object or null | Final `PHQ9AssessmentResult`, present only after completion. |
+| `crisis_support` | object or null | Crisis resources surfaced when item 9 signals risk. |
+| `Error` | string or null | Graph-level validation message if present. |
+
 ## Error Format
 
 Most application errors use FastAPI's standard error envelope:
@@ -987,10 +1285,11 @@ Common status codes:
 3. Store the returned `refresh_token` securely.
 4. Call protected endpoints with `Authorization: Bearer <access_token>`.
 5. Submit PHQ-9 assessments with `POST /api/assessment/phq9` when needed.
-6. Read saved PHQ-9 history with `GET /api/assessment/phq9/history`.
-7. When access expires, call `POST /api/auth/refresh` with the current refresh token.
-8. Replace both stored tokens with the response from refresh.
-9. On logout, call `POST /api/auth/logout` and clear local token state.
+6. Or run the conversational PHQ-9 flow with `POST /api/assessment/phq9/start` followed by repeated `POST /api/assessment/phq9/continue` calls.
+7. Read saved PHQ-9 history with `GET /api/assessment/phq9/history`.
+8. When access expires, call `POST /api/auth/refresh` with the current refresh token.
+9. Replace both stored tokens with the response from refresh.
+10. On logout, call `POST /api/auth/logout` and clear local token state.
 
 Example sequence:
 
@@ -1027,6 +1326,16 @@ curl -X POST http://localhost:8000/api/assessment/phq9 \
 
 curl "http://localhost:8000/api/assessment/phq9/history?limit=20&skip=0" \
   -H "Authorization: Bearer <access_token>"
+
+curl -X POST http://localhost:8000/api/assessment/phq9/start \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"notes":"Symptoms have been worse this week."}'
+
+curl -X POST http://localhost:8000/api/assessment/phq9/continue \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"answers":[{"question_id":1,"score":1}],"incoming_score":2,"notes":"Symptoms have been worse this week."}'
 
 curl -X POST http://localhost:8000/api/auth/refresh \
   -H "Content-Type: application/json" \

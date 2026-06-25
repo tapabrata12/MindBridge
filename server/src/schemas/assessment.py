@@ -7,6 +7,25 @@ PHQ9AnswerValue = Literal[0,1,2,3] # Define allowed PHQ-9 answer values where 0=
 PHQ9QuestionID = Literal[1,2,3,4,5,6,7,8,9] # Define strict question identifiers for PHQ-9 questions one through nine
 PHQ9Severity = Literal["minimal", "mild", "moderate", "moderately_severe", "severe"]  # Define standard PHQ-9 score interpretation bands
 
+
+"""
+#####################################################################################################
+This part is where we make the crisis support part where we define the crisis center info
+#####################################################################################################
+"""
+class CrisisResource(BaseModel):  # Define one crisis-support contact/resource returned by safety-aware responses
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)  # Reject unknown fields and normalize strings for API safety
+    name: str = Field(..., min_length=1, description="Crisis support resource name")  # Store the public name of the helpline or emergency resource
+    contact: str = Field(..., min_length=1, description="Phone number or emergency contact instruction")  # Store the phone number or contact instruction
+    region: str = Field(..., min_length=1, description="Region where this crisis resource applies")  # Store the region so the frontend can label resources clearly
+
+class PHQ9CrisisSupport(BaseModel):  # Define structured safety guidance returned when PHQ-9 item 9 signals risk
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)  # Reject unknown fields and normalize strings for stable output
+    crisis_detected: bool = Field(default=True, description="Whether this response triggered crisis support")  # Tell clients that normal flow should be interrupted
+    message: str = Field(..., min_length=1, description="Safety-first message to show immediately")  # Store the main safety message for the user
+    resources: List[CrisisResource] = Field(default_factory=list, description="Crisis support resources to surface")  # Store one or more crisis resources for immediate display
+
+
 class PHQ9QuestionAnswer(BaseModel):  # Define schema for a single PHQ-9 question answer item
     model_config = ConfigDict(extra="forbid",str_strip_whitespace=True)  # Reject unknown fields and strip whitespace from input strings
     question_id:PHQ9QuestionID = Field(..., description="PHQ-9 question number from 1 to 9")  # Require a valid PHQ-9 question identifier
@@ -83,17 +102,29 @@ class PHQ9AssessmentHistoryResponse(BaseModel):  # Define paginated PHQ-9 histor
 
 """
 #####################################################################################################
-This part is where we make the crisis support part where we define the crisis center info
+This part is where we make the schema about the PHQ9 Conversation Schema
 #####################################################################################################
 """
-class CrisisResource(BaseModel):  # Define one crisis-support contact/resource returned by safety-aware responses
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)  # Reject unknown fields and normalize strings for API safety
-    name: str = Field(..., min_length=1, description="Crisis support resource name")  # Store the public name of the helpline or emergency resource
-    contact: str = Field(..., min_length=1, description="Phone number or emergency contact instruction")  # Store the phone number or contact instruction
-    region: str = Field(..., min_length=1, description="Region where this crisis resource applies")  # Store the region so the frontend can label resources clearly
 
-class PHQ9CrisisSupport(BaseModel):  # Define structured safety guidance returned when PHQ-9 item 9 signals risk
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)  # Reject unknown fields and normalize strings for stable output
-    crisis_detected: bool = Field(default=True, description="Whether this response triggered crisis support")  # Tell clients that normal flow should be interrupted
-    message: str = Field(..., min_length=1, description="Safety-first message to show immediately")  # Store the main safety message for the user
-    resources: List[CrisisResource] = Field(default_factory=list, description="Crisis support resources to surface")  # Store one or more crisis resources for immediate display
+class PHQ9ConversationStartRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    notes: Optional[str] = Field(default=None, min_length=1, max_length=1000, description="Optional note to attach to this conversation")
+
+class PHQ9ConversationContinueRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+    answers: List[PHQ9QuestionAnswer] = Field(default_factory=list, description= "The score (0-3) for the question just answered")
+    incoming_score: PHQ9AnswerValue = Field(...,
+                                            description="The score (0-3) for the question just answered")
+    notes: Optional[str] = Field(default=None, min_length=1, max_length=1000,description="Optional note to attach to this conversation")
+
+class PHQ9ConversationResponse(BaseModel):  # Define the safe, validated shape sent back for every /start and /continue call
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)  # Reject unknown fields, same safety rule as every other schema
+    assistant_message: Optional[str] = Field(default=None, description="The next question to show the user, or a completion message")  # The question text (or final message) the frontend displays
+    score_options: Optional[dict[int, str]] = Field(default=None, description="Valid answer choices to display, e.g. 0=Not at all")  # The 0-3 options dict, so the frontend can render answer buttons
+    current_question_id: Optional[int] = Field(default=None, ge=1, le=9, description="Which PHQ-9 question number is being asked right now")  # Tells the frontend which question (1-9) is currently active
+    answers: List[PHQ9QuestionAnswer] = Field(default_factory=list, description="All answers collected so far in this conversation")  # The running history, so the frontend can pass it back into the next /continue call
+    is_complete: bool = Field(default=False, description="Whether all 9 PHQ-9 questions have been answered")  # Tells the frontend whether to keep asking or show the result
+    needs_answer: bool = Field(default=False, description="Whether the frontend should currently show an answer prompt")  # Tells the frontend whether to render the answer buttons right now
+    result: Optional[PHQ9AssessmentResult] = Field(default=None, description="Final scored PHQ-9 result, only present once is_complete is true")  # The final score/severity/recommendation, only filled in at the very end
+    crisis_support: Optional[PHQ9CrisisSupport] = Field(default=None, description="Crisis resources, only present if item 9 signaled risk")  # Safety resources, only filled in if needed
+    Error: Optional[str] = Field(default=None, description="Validation error message, e.g. if an invalid score was submitted")  # Tells the frontend if something went wrong with the last answer

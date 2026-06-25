@@ -43,7 +43,7 @@ MindBridge is planned as a mental wellness support and screening platform. It sh
 
 ## Current Repository Status
 
-This repository snapshot currently contains the **backend service only** under [`server/`](server). The broader planning documents describe a larger platform with frontend, RAG, LangGraph orchestration, clinic discovery, notifications, and follow-up loops, but those modules are **not yet present in this code snapshot**.
+This repository snapshot currently contains the **backend service only** under [`server/`](server). The broader planning documents describe a larger platform with frontend, RAG, clinic discovery, notifications, and follow-up loops, but those modules are **not yet present in this code snapshot**.
 
 ### Implemented Today
 
@@ -54,16 +54,19 @@ This repository snapshot currently contains the **backend service only** under [
 - Access token refresh flow
 - Authenticated profile lookup
 - Logout by server-side refresh-token revocation
+- PHQ-9 single-shot scoring and MongoDB persistence
+- Paginated PHQ-9 assessment history
+- LangGraph-based conversational PHQ-9 start/continue flow
+- PHQ-9 item 9 crisis-support payloads with India-focused resources
 - Swagger/ReDoc documentation endpoints
 
 ### Planned in the Product Specification
 
 - Onboarding profile completion flows
-- Conversational assessment engine with PHQ-9, GAD-7, PCL-5, MDQ, and AUDIT
-- LangGraph state orchestration
+- Additional conversational screeners: GAD-7, PCL-5, MDQ, and AUDIT
 - ChromaDB-backed RAG pipeline
 - Insight reports and coping plans
-- Crisis detection middleware
+- Global crisis detection middleware for all conversational routes
 - Google Maps clinic finder
 - Feedback capture and day 7/day 30 follow-up loops
 - React + Tailwind + shadcn/ui frontend
@@ -102,19 +105,23 @@ The product specification expects profile-based personalization using:
 - Social support level
 - Significant recent life events
 
-The current backend already stores a starter `profile` object inside each user document, which creates a clean foundation for future onboarding and personalization routes.
+The current backend stores a starter `profile` object inside each user document and exposes authenticated `GET /api/profile` and `PUT /api/profile` routes.
 
 ### 3. Conversational Assessment
 
-Planned validated screeners include:
+The backend currently implements PHQ-9 in two ways:
 
-- `PHQ-9` for depression
+- `POST /api/assessment/phq9` accepts all nine answers, scores the assessment, saves it to MongoDB, and returns the computed result.
+- `POST /api/assessment/phq9/start` and `POST /api/assessment/phq9/continue` run a LangGraph-backed one-question-at-a-time flow and return the final score after answer nine.
+
+Planned additional validated screeners include:
+
 - `GAD-7` for anxiety
 - `PCL-5` for PTSD screening
 - `MDQ` for bipolar screening
 - `AUDIT` for substance use
 
-The intended execution model is conversational, not static form filling. LangGraph is the planned orchestration layer for maintaining screener state, progression, and conditional routing.
+The current PHQ-9 graph maintains the collected answers, asks the next question, validates answer values `0` through `3`, and routes to scoring when nine answers have been collected.
 
 ### 4. Reports and Coping Guidance
 
@@ -127,7 +134,7 @@ Planned post-assessment outputs include:
 
 ### 5. Crisis Safety
 
-The project specification marks crisis interception as non-negotiable. The target behavior is:
+The project specification marks crisis interception as non-negotiable. Current PHQ-9 scoring flags clinical risk when question 9 has a score greater than `0` and returns a structured `crisis_support` object. The broader target behavior is:
 
 - Inspect every inbound user message
 - Detect self-harm or suicidal ideation signals using keyword and semantic matching
@@ -163,11 +170,13 @@ flowchart TD
 
 ### Current Request Flow
 
-1. Client calls the FastAPI backend under `/api/auth/*`
+1. Client calls the FastAPI backend under `/api/*`
 2. Protected routes use `OAuth2PasswordBearer` to extract the access token
 3. Token is decoded using the configured JWT secret and algorithm
 4. User identity is resolved from MongoDB
-5. Business logic reads/writes user documents and refresh tokens
+5. Auth and profile logic reads/writes user documents and refresh tokens
+6. Assessment routes score PHQ-9 submissions, save completed single-shot assessments, and retrieve assessment history
+7. Conversational PHQ-9 routes invoke the LangGraph assessment graph and return either the next question or the final scored result
 
 ## Technology Decisions
 
@@ -178,10 +187,10 @@ The planning documents define a clear stack direction. The table below distingui
 | Frontend | React + Tailwind + shadcn/ui | Fast SPA development and accessible components | Not present in repo |
 | Backend | FastAPI + Uvicorn | Async-first, Pydantic-native, OpenAPI out of the box | Implemented |
 | Auth | Self-hosted JWT + bcrypt | Full ownership of sensitive auth data | Implemented |
-| Database | MongoDB Atlas | Natural fit for nested profiles, sessions, feedback | Implemented for users/auth |
+| Database | MongoDB Atlas | Natural fit for nested profiles, sessions, feedback | Implemented for users/auth/profile/assessments |
 | Vector store | ChromaDB | Local/self-hosted and cost-efficient | Planned only |
 | Embeddings | `nomic-embed-text` via Ollama | No API cost, local-friendly | Planned only |
-| Orchestration | LangGraph | Stateful multi-turn workflows | Planned only |
+| Orchestration | LangGraph | Stateful multi-turn workflows | Implemented for PHQ-9 conversation |
 | LLM provider | GPT-4o-mini or Gemini Flash | Strong quality-to-cost ratio | Planned only |
 | Maps | Google Maps Places API | Nearby clinic discovery | Planned only |
 | Notifications | Email / WhatsApp APIs | Day 7/day 30 follow-up loop | Planned only |
@@ -192,16 +201,22 @@ The planning documents define a clear stack direction. The table below distingui
 ### Actual Repository Layout
 
 ```text
-Mental-Helth-Companion/
+MindBridge/
 |-- server/
 |   |-- src/
 |   |   |-- api/routes/auth.py
+|   |   |-- api/routes/profile.py
+|   |   |-- api/routes/assessment.py
 |   |   |-- core/config.py
 |   |   |-- core/dependencies.py
 |   |   |-- core/security.py
 |   |   |-- db/mongodb.py
+|   |   |-- graph/assessment_graph.py
+|   |   |-- models/assessment.py
 |   |   |-- models/user.py
+|   |   |-- schemas/assessment.py
 |   |   |-- schemas/user.py
+|   |   |-- services/assessment_service.py
 |   |   |-- services/user_service.py
 |   |   `-- main.py
 |   |-- API-DOCUMENTATION.md
@@ -215,7 +230,7 @@ Mental-Helth-Companion/
 
 The provided `folder_structure.txt` describes a larger target solution with:
 
-- `Server/` for backend APIs and services
+- `server/` for backend APIs and services
 - `Client/` for the React frontend
 - `docs/` for architecture and specification artifacts
 
@@ -233,7 +248,7 @@ That planned structure is useful as the implementation roadmap, but it is not fu
 
 ```bash
 git clone <your-repository-url>
-cd Mental-Helth-Companion/server
+cd MindBridge/server
 uv sync
 uv run uvicorn src.main:app --reload
 ```
@@ -247,7 +262,7 @@ The backend should then be available at:
 ### Windows PowerShell Alternative
 
 ```powershell
-cd D:\Mental-Helth-Companion\server
+cd D:\MindBridge\Server
 uv sync
 uv run uvicorn src.main:app --reload
 ```
@@ -299,9 +314,15 @@ The backend currently exposes authentication, profile, and PHQ-9 assessment endp
 | `POST` | `/api/auth/register` | Register a new user and issue access/refresh tokens |
 | `POST` | `/api/auth/login` | Authenticate a user and issue a fresh token pair |
 | `POST` | `/api/auth/login/swagger` | Form-based login endpoint for Swagger UI OAuth flow |
-| `GET` | `/api/auth/profile` | Return the authenticated user profile document |
+| `GET` | `/api/auth/me` | Return the authenticated user's email |
 | `POST` | `/api/auth/refresh` | Issue a new access token from a valid refresh token |
-| `GET` | `/api/auth/logout` | Clear stored refresh tokens and end active sessions |
+| `POST` | `/api/auth/logout` | Clear stored refresh tokens and end active sessions |
+| `GET` | `/api/profile` | Return the authenticated user's profile |
+| `PUT` | `/api/profile` | Replace the authenticated user's profile |
+| `POST` | `/api/assessment/phq9` | Score and save a complete PHQ-9 assessment |
+| `GET` | `/api/assessment/phq9/history` | Return saved PHQ-9 assessment history |
+| `POST` | `/api/assessment/phq9/start` | Start a conversational PHQ-9 flow |
+| `POST` | `/api/assessment/phq9/continue` | Submit one conversational PHQ-9 answer |
 
 ### API Reference
 
@@ -314,6 +335,13 @@ Detailed request/response documentation lives in [`server/API-DOCUMENTATION.md`]
 - Logout clears the stored refresh token array for the user
 - Multiple sessions are possible because each login appends a refresh token
 - The current logout implementation revokes all sessions for the user, not a single device session
+
+### Assessment Model
+
+- Single-shot PHQ-9 submissions are persisted to the configured assessment collection.
+- Conversational PHQ-9 responses are stateful from the client's perspective: the frontend sends back the accumulated `answers` array on each `/continue` call.
+- The conversational flow currently computes the final score but does not save that result to MongoDB.
+- PHQ-9 item 9 with any score greater than `0` sets `clinical_risk: true` and returns `crisis_support`.
 
 ## Delivery Workflow
 
@@ -392,10 +420,12 @@ The target deployment topology described in the project documents is:
 The README intentionally separates implemented behavior from planned behavior. At the time of writing, the main gaps are:
 
 - No frontend application is committed in this repository snapshot
-- No LangGraph, ChromaDB, embedding, or LLM integration code is present
+- ChromaDB, embedding, and LLM integration code is not present
+- LangGraph is present only for the PHQ-9 conversational flow
 - No clinic finder, notification, feedback, or follow-up modules are present
 - Only focused backend unit tests are present; broader integration and frontend tests are still missing
-- Chat-route crisis interception middleware is still missing; PHQ-9 item 9 now returns structured crisis support
+- Conversational PHQ-9 completion is not currently persisted to MongoDB; use `POST /api/assessment/phq9` for saved PHQ-9 records
+- Chat-route/global crisis interception middleware is still missing; PHQ-9 item 9 now returns structured crisis support
 
 ## License
 

@@ -6,7 +6,7 @@ Importing the necessary modules
 from langgraph.graph import START,END,StateGraph # Build the Graph
 from typing import List,Optional,Any,TypedDict,Literal  # To define Graph Schema
 from src.schemas.assessment import PHQ9AssessmentRequest
-from src.services.assessment_service import run_phq9_assessment
+from src.services.assessment_service import score_phq9_assessment
 """
 #####################################################################################################
 This is a simple lookup table. The frontend will show info from this tool dicts
@@ -50,7 +50,7 @@ class PHQ9ConversationState(TypedDict, total=False):
     incoming_score: Optional[int]
     result: Optional[dict[str, Any]]
     crisis_support: Optional[dict[str, Any]]
-    error: Optional[str | None]
+    Error: Optional[str | None]
 
 """
 #####################################################################################################
@@ -85,22 +85,22 @@ def record_answer(state: PHQ9ConversationState) -> PHQ9ConversationState:
     incoming_score = state.get("incoming_score")
     # Check the score given from the user if it is not given by the user then return the same answer
     if incoming_score is None:
-        return {"answers": answers, "error": None}
+        return {"answers": answers, "Error": None}
 
     # If the given number is not from the Options then return the unedited answer with the error
     if incoming_score not in PHQ9_SCORE_OPTIONS:
-        return {"answers": answers, "error": "Please answer with 0, 1, 2, or 3."}
+        return {"answers": answers, "Error": "Please answer with 0, 1, 2, or 3."}
 
     # before adding new question id and option check if it is full or not
     if len(answers) >= 9:
-        return {"answers": answers, "error": None}
+        return {"answers": answers, "Error": None}
 
     # Increase the ID as it starts from 1
     question_id = _increase_question_id(answers)
 
     # Append the new list
     answers.append({"question_id": question_id, "score": incoming_score})
-    return {"answers": answers, "error": None}
+    return {"answers": answers, "Error": None}
 
 
 """
@@ -138,7 +138,7 @@ async def score_assessment(state: PHQ9ConversationState)-> PHQ9ConversationState
         answers=answers,
         notes=notes
     )
-    result = run_phq9_assessment(request)
+    result = await score_phq9_assessment(request)
     result_data = result.model_dump()
 
     return {
@@ -149,7 +149,7 @@ async def score_assessment(state: PHQ9ConversationState)-> PHQ9ConversationState
         "needs_answer": False,
         "result": result_data,
         "crisis_support": result_data.get("crisis_support"),
-        "error": None,
+        "Error": None,
     }
 
 def build_phq9_conversation_graph():

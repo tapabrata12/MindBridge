@@ -2,11 +2,18 @@
 
 from typing import Any, Dict  # Import typing helpers for authenticated user dependency payload.
 from fastapi import APIRouter, Depends, HTTPException, Query, status  # Import FastAPI router, dependency injection, query validation, and HTTP tools.
+from typer.cli import state
+
 from src.core.config import settings  # Import application settings for API prefix configuration.
 from src.core.dependencies import search_user  # Import JWT-based current-user dependency for protected routes.
 from src.schemas.assessment import PHQ9AssessmentHistoryResponse, PHQ9AssessmentRequest, PHQ9AssessmentResponse  # Import PHQ-9 request, response, and history schemas.
 from src.services.assessment_service import get_phq9_history, run_phq9_assessment_and_save  # Import PHQ-9 service functions for scoring, saving, and history retrieval.
+from src.graph.assessment_graph import start_conversation, continue_conversation
+from src.schemas.assessment import PHQ9ConversationStartRequest,PHQ9ConversationContinueRequest,PHQ9ConversationResponse
+
 router = APIRouter(prefix=f"{settings.PREFIX}/assessment", tags=["Assessment"])  # Create assessment router mounted at /api/assessment.
+
+
 
 @router.post("/phq9", response_model=PHQ9AssessmentResponse, status_code=status.HTTP_200_OK)  # Define protected endpoint for PHQ-9 scoring submissions.
 async def submit_phq9_assessment(  # Define async route handler for PHQ-9 requests.
@@ -23,6 +30,9 @@ async def submit_phq9_assessment(  # Define async route handler for PHQ-9 reques
         raise  # Preserve status code and detail from known API/service-level errors.
     except Exception:  # Catch any unexpected runtime errors from service or database processing.
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to process PHQ-9 assessment")  # Return safe generic 500 response.
+
+
+
 
 @router.get("/phq9/history", response_model=PHQ9AssessmentHistoryResponse, status_code=status.HTTP_200_OK)  # Define protected endpoint for paginated PHQ-9 history retrieval.
 async def see_phq9_history(  # Define async route handler for PHQ-9 history requests.
@@ -41,3 +51,66 @@ async def see_phq9_history(  # Define async route handler for PHQ-9 history requ
         raise  # Preserve status code and detail from known API/service-level errors.
     except Exception:  # Catch any unexpected runtime errors from service or database processing.
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to fetch PHQ-9 assessment history")  # Return safe generic 500 response.
+
+
+@router.post("/phq9/start", response_model=PHQ9ConversationResponse, status_code=status.HTTP_200_OK)
+async def start_phq9_conversation(payload: PHQ9ConversationStartRequest, user: Dict[str, Any]= Depends(search_user)):
+    user_id = user.get("_id")  # Read authenticated user identifier from dependency output.
+    if not isinstance(user_id,str) or not user_id.strip():  # Validate authenticated context before calling service logic.
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="Invalid user token")  # Return 401 when token context is malformed.
+
+    try:
+        state = await start_conversation(payload.notes)
+
+        return PHQ9ConversationResponse(
+            answers= state.get("answers", []),
+            assistant_message= state.get("assistant_message"),
+            score_options= state.get('score_options'),
+            current_question_id= state.get("current_question_id"),
+            is_complete= state.get("is_complete"),
+            needs_answer= state.get("needs_answer"),
+            crisis_support= state.get("crisis_support"),
+            result= state.get("result"),
+            Error= state.get("Error")
+        )
+
+    except HTTPException:  # If an HTTPException was already raised somewhere inside, let it pass through unchanged
+        raise  # Re-raise it exactly as-is — same pattern as your existing routes
+    except Exception:  # Catch any other unexpected crash (graph error, MongoDB issue, anything)
+        raise HTTPException(  # Convert it to a clean HTTP error instead of a raw Python traceback
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,  # 500 means "something broke on our server"
+            detail="Failed to start PHQ-9 conversation"
+            # Safe generic message — never expose raw error internals to clients
+        )
+
+
+@router.post("/phq9/continue", response_model=PHQ9ConversationResponse, status_code=status.HTTP_200_OK)
+async def continue_phq9_conversation(payload: PHQ9ConversationContinueRequest, user: Dict[str,Any] = Depends(search_user)):
+    user_id = user.get("_id")  # Read authenticated user identifier from dependency output.
+
+    if not isinstance(user_id,str) or not user_id.strip():  # Validate authenticated context before calling service logic.
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="Invalid user token")  # Return 401 when token context is malformed.
+
+    try:
+        answer_from_user =  [data.model_dump() for data in payload.answers]
+        state = await continue_conversation(answers=answer_from_user, notes=payload.notes, incoming_score=payload.incoming_score)
+
+        return PHQ9ConversationResponse(
+            assistant_message= state.get("assistant_message"),
+            score_options= state.get("score_options"),
+            current_question_id= state.get("current_question_id"),
+            answers= state.get("answers",[]),
+            is_complete= state.get("is_complete",False),
+            needs_answer= state.get("needs_answer", False),
+            result= state.get("result"),
+            crisis_support=state.get("crisis_support"),
+            Error= state.get("Error")
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(  # Convert it to a clean HTTP error instead of a raw Python traceback
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,  # 500 means "something broke on our server"
+            detail="Failed to continue PHQ-9 conversation"
+            # Safe generic message — never expose raw error internals to clients
+        )
