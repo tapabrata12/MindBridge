@@ -1,6 +1,6 @@
 # MindBridge API Documentation
 
-Last verified against backend code: June 25, 2026.
+Last verified against backend code: June 28, 2026.
 
 Base URL:
 
@@ -485,7 +485,7 @@ curl -X PUT http://localhost:8000/api/profile \
 Assessment endpoints are protected and currently support PHQ-9 only. PHQ-9 is available in two modes:
 
 - Single-shot submission through `POST /api/assessment/phq9`, which scores and saves a completed 9-answer assessment.
-- Conversational flow through `POST /api/assessment/phq9/start` and `POST /api/assessment/phq9/continue`, which asks one question at a time and returns the final score after the ninth answer.
+- Conversational flow through `POST /api/assessment/phq9/start` and `POST /api/assessment/phq9/continue`, which asks one question at a time, returns the final score after the ninth answer, and saves the completed assessment.
 
 ### POST /api/assessment/phq9
 
@@ -770,7 +770,7 @@ curl -X POST http://localhost:8000/api/assessment/phq9/start \
 
 ### POST /api/assessment/phq9/continue
 
-Submits one answer to the conversational PHQ-9 flow. Until nine answers have been collected, the response returns the next question. After the ninth answer, it returns the final scored result.
+Submits one answer to the conversational PHQ-9 flow. Until nine answers have been collected, the response returns the next question. After the ninth answer, it saves the completed assessment and returns the final scored result.
 
 Auth required: Yes
 
@@ -809,7 +809,7 @@ Important current behavior:
 - The backend assigns the next `question_id` from `len(answers) + 1`; clients should pass back the `answers` array from the previous response unchanged.
 - `incoming_score` is recorded for the current question before the graph decides whether to ask the next question or score the assessment.
 - When the ninth answer is submitted, `is_complete` becomes `true`, `needs_answer` becomes `false`, and `result` contains the scored PHQ-9 output.
-- The conversational endpoint computes a final result but currently does not persist it to MongoDB through `run_phq9_assessment_and_save`.
+- When the ninth answer is submitted successfully, the route also persists the completed PHQ-9 result to MongoDB through `run_phq9_assessment_and_save`.
 
 Intermediate success response `200`:
 

@@ -112,7 +112,7 @@ The current backend stores a starter `profile` object inside each user document 
 The backend currently implements PHQ-9 in two ways:
 
 - `POST /api/assessment/phq9` accepts all nine answers, scores the assessment, saves it to MongoDB, and returns the computed result.
-- `POST /api/assessment/phq9/start` and `POST /api/assessment/phq9/continue` run a LangGraph-backed one-question-at-a-time flow and return the final score after answer nine.
+- `POST /api/assessment/phq9/start` and `POST /api/assessment/phq9/continue` run a LangGraph-backed one-question-at-a-time flow, return the final score after answer nine, and save the completed assessment.
 
 Planned additional validated screeners include:
 
@@ -340,7 +340,7 @@ Detailed request/response documentation lives in [`server/API-DOCUMENTATION.md`]
 
 - Single-shot PHQ-9 submissions are persisted to the configured assessment collection.
 - Conversational PHQ-9 responses are stateful from the client's perspective: the frontend sends back the accumulated `answers` array on each `/continue` call.
-- The conversational flow currently computes the final score but does not save that result to MongoDB.
+- The conversational flow saves the completed PHQ-9 result to MongoDB after the ninth answer.
 - PHQ-9 item 9 with any score greater than `0` sets `clinical_risk: true` and returns `crisis_support`.
 
 ## Delivery Workflow
@@ -424,7 +424,6 @@ The README intentionally separates implemented behavior from planned behavior. A
 - LangGraph is present only for the PHQ-9 conversational flow
 - No clinic finder, notification, feedback, or follow-up modules are present
 - Only focused backend unit tests are present; broader integration and frontend tests are still missing
-- Conversational PHQ-9 completion is not currently persisted to MongoDB; use `POST /api/assessment/phq9` for saved PHQ-9 records
 - Chat-route/global crisis interception middleware is still missing; PHQ-9 item 9 now returns structured crisis support
 
 ## License

@@ -95,6 +95,10 @@ async def continue_phq9_conversation(payload: PHQ9ConversationContinueRequest, u
         answer_from_user =  [data.model_dump() for data in payload.answers]
         state = await continue_conversation(answers=answer_from_user, notes=payload.notes, incoming_score=payload.incoming_score)
 
+        if state.get("is_complete"):
+            completed_answers_schema = PHQ9AssessmentRequest(answers=state.get("answers", []), notes=payload.notes)
+            await run_phq9_assessment_and_save(user_id, completed_answers_schema)
+
         return PHQ9ConversationResponse(
             assistant_message= state.get("assistant_message"),
             score_options= state.get("score_options"),
