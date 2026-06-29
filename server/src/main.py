@@ -36,8 +36,3 @@ app.include_router(assessment_router) # Mount assessment routes onto the applica
 @app.get("/", status_code=status.HTTP_200_OK)  # Define root endpoint for quick service confirmation
 async def root() -> Dict[str, str]:  # Return small JSON payload for root route
     return {"message": "MindBridge API is running"}  # Send simple readiness message
-
-
-@app.get("/health", status_code=status.HTTP_200_OK)  # Define health endpoint for uptime monitoring
-async def health_check() -> Dict[str, str]:  # Return health status payload
-    return {"status": "ok"}  # Return stable health response for platform probes
