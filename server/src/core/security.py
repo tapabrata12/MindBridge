@@ -2,19 +2,21 @@
 
 from datetime import datetime, timedelta, timezone  # Import timezone-aware datetime utilities for secure token expiry
 from typing import Any, Dict, Optional  # Import typing helpers for token payload contracts
+import bcrypt  # Import native bcrypt library directly to avoid passlib breaking changes
 from jose import JWTError, jwt  # Import python-jose tools for JWT encode/decode
-from passlib.context import CryptContext  # Import passlib bcrypt context for password hashing
 from src.core.config import settings  # Import app settings for JWT secret, algorithm, and TTL values
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")  # Configure bcrypt hashing strategy for password operations
 
 
 def hash_password(password: str) -> str:  # Create helper to hash plain text passwords securely
-    return pwd_context.hash(password)  # Return bcrypt hash string for storage in database
+    # bcrypt requires bytes, so we encode, hash, and then decode back to a string for DB storage
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password.encode("utf-8"), salt)
+    return hashed.decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:  # Create helper to compare plain password with stored hash
-    return pwd_context.verify(plain_password, hashed_password)  # Return True when password matches hash, else False
+    # Encode both values to bytes before passing them to bcrypt's verification check
+    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
 
 
 def _build_token_payload(data: Dict[str, Any], expires_delta: timedelta, token_type: str) -> Dict[str, Any]:  # Internal helper to build consistent JWT payloads
