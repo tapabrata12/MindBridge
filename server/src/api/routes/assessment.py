@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status  # Import F
 
 from src.core.config import settings  # Import application settings for API prefix configuration.
 from src.core.dependencies import search_user  # Import JWT-based current-user dependency for protected routes.
-from src.schemas.assessment import PHQ9AssessmentHistoryResponse, PHQ9AssessmentRequest, PHQ9AssessmentResponse  # Import PHQ-9 request, response, and history schemas.
+from src.schemas.assessment import PHQ9AssessmentHistoryResponse, PHQ9AssessmentRequest # Import PHQ-9 request, response, and history schemas.
 from src.services.assessment_service import get_phq9_history, run_phq9_assessment_and_save  # Import PHQ-9 service functions for scoring, saving, and history retrieval.
 from src.graph.assessment_graph import start_conversation, continue_conversation
 from src.schemas.assessment import PHQ9ConversationStartRequest,PHQ9ConversationContinueRequest,PHQ9ConversationResponse
