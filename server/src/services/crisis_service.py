@@ -8,7 +8,6 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel
-
 from src.core.config import settings
 from src.core.crisis_phrases import CRISIS_PHRASES
 from src.schemas.assessment import (
@@ -81,7 +80,7 @@ async def get_llm() -> (
     return crisis_prompt_template | structured_llm
 
 
-async def check_for_crisis_semantic(text: str, max_try: int = 3, initial_delay: float = 1.0) -> SemanticCrisisResult:
+async def check_for_crisis_semantic(text: str, max_try: int = 3, initial_delay: float = 1.0) -> BaseModel | SemanticCrisisResult | Any:
     """Checks for mental health crisis using Gemini with exponential backoff and jitter."""
     delay = initial_delay
 
@@ -104,7 +103,7 @@ async def check_for_crisis_semantic(text: str, max_try: int = 3, initial_delay: 
 """
 ###################################################################################################################################################
                                                                         Main Function
-Signature: String                                                                                               Return: Pydantic Base Model
+Signature: String                                                                                                       Return: Pydantic Base Model
 ###################################################################################################################################################
 """
 def check_for_crisis(text: str) -> CrisisDetectionResult:

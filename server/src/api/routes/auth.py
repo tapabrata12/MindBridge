@@ -51,7 +51,7 @@ async def refresh_token(payload: RefreshRequest) -> TokenResponse:  # Accept ref
     return TokenResponse(**result)  # Return refreshed token response
 
 
-@router.post("/logout", status_code=status.HTTP_200_OK)  # Create logout endpoint
+@router.get("/logout", status_code=status.HTTP_200_OK)  # Create logout endpoint
 async def logout(user: Dict[str, Any] = Depends(search_user)) -> Dict[str, str]:  # Use authenticated user from dependency
     email = user.get("email")  # Extract email from current user context
     if not isinstance(email, str) or not email.strip():  # Validate email before service call

@@ -4,7 +4,7 @@
 from src.core.config import settings
 # OllamaEmbeddings talks to a locally running Ollama server to generate embeddings
 from langchain_ollama import OllamaEmbeddings
-# NVIDIAEmbeddings talks to NVIDIA's hosted embedding API as a fallback option
+# huggingface Embeddings
 from langchain_huggingface import HuggingFaceEndpointEmbeddings
 
 
@@ -62,7 +62,7 @@ async def embed_texts(texts: list[str]) -> list[list[float | int]]:
     else:
         # This should be unreachable now thanks to the config.py validator,
         # but we keep this check as a safety net in case settings are ever bypassed
-        raise ValueError("Embedding provider must be one of 'nvidia' or 'ollama'")
+        raise ValueError("Embedding provider must be one of 'huggingface' or 'ollama'")
 
     # Sanity check: we should get back exactly one vector per input text
     if len(vectors) != len(docs):
