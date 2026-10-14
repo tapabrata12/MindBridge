@@ -21,6 +21,7 @@ class Settings(BaseSettings):  # Define strongly validated application settings 
     DATABASE_NAME: str = Field(..., min_length=1, description="MongoDB database name")  # Require target database name
     USER_COLLECTION: str = Field(..., min_length=1, description="MongoDB user collection name")  # Require collection name for user documents
     ASSESSMENT_COLLECTION_NAME: str = Field(..., min_length=1, description="Assessment collection name")  # Require collection name for user assessment
+    REPORT_COLLECTION_NAME: str = Field(..., min_length=1, description="Report collection name")
     CHROMA_COLLECTION_NAME: str = Field(..., min_length=1, description="Chroma collection name") # Require collection name for chroma vector store
     CHROMA_DIR: str = Field(..., min_length=1, description="Chroma directory") # Require for the path of the saved DB
     JWT_SECRET: str = Field(..., min_length=32, description="JWT signing secret (minimum 32 characters)")  # Require strong JWT secret length
