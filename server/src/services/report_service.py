@@ -1,11 +1,28 @@
+from fastapi import HTTPException, status
 from typing import Any
+import logging
+from pymongo.errors import PyMongoError
 from langchain_core.runnables import  RunnableSerializable
 from pydantic import BaseModel
-from src.schemas.assessment import PHQ9ReportResult, PHQ9AssessmentResult
-from src.rag.retriever import retrieve_context
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_core.prompts import ChatPromptTemplate
+from typing import Dict, List, Any
 from src.core.config import settings
+from src.schemas.assessment import PHQ9ReportResult, PHQ9AssessmentResult
+from src.rag.retriever import retrieve_context
+from src.db import mongodb
+from src.models.report import create_phq9_report_document
+
+# Configure the logger
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.StreamHandler(),  # Print to console
+        logging.FileHandler("mongo_app.log")  # Save to a file
+    ]
+)
+logger = logging.getLogger(__name__)
 
 SEVERITY_SEARCH_QUERIES: dict[str, str] = {
     "minimal": "minimal depression symptoms self-care and monitoring",
@@ -71,3 +88,64 @@ async def generate_phq9_report(result: PHQ9AssessmentResult):
 
     llm_result = await llm_chain.ainvoke({"severity": severity, "total_score": total_score, "context": formatted_string})
     return llm_result
+
+"""
+This is the Save function for the document to be saved into the DB.
+
+Parameter: user_id, assessment_id. Report
+Return: Saved MongoDB Model
+"""
+
+async def save_report_to_db(user_id: str, assessment_id: str, report: PHQ9ReportResult)-> Dict[str,Any]:
+    # Step 1: check if mongoDB client is responding or not
+    if mongodb.db is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database is not working for internal server problem")
+    # Step 2: Create model for saving
+    report_model = create_phq9_report_document(user_id=user_id, assessment_id=assessment_id, report= report)
+    # Step 3: Extract Saved model from the DB
+    saved_model = await mongodb.db[settings.REPORT_COLLECTION_NAME].insert_one(report_model)
+    # Step 4: Convert the DB created _id
+    report_model["_id"] = str(saved_model.inserted_id)
+    # Return it as JSON
+    return saved_model
+
+"""
+This is the Save function for the document to be saved into the DB.
+
+Parameter: user_id
+Return: All Saved MongoDB Reports
+"""
+
+async def get_all_saved_reports(user_id: str, assessment_id: str)-> List[Dict[str, str]]:
+    # Step 1: check if mongoDB client is responding or not
+    if mongodb.db is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail="Database is not working for internal server problem")
+
+    # Step 2: Get the collection
+
+    try:
+        collection = await mongodb.db[settings.REPORT_COLLECTION_NAME]
+
+        if collection is None:
+            return []
+
+        # Step 3:
+        cursor = collection.find({"user_id": user_id, "assessment_id": assessment_id}).sort("created_at", -1)  # -1 means newest first
+
+        all_reports = await cursor.to_list(length=50)  # take at most 50 cards
+
+        all_reports_list = []
+
+        for report in all_reports:
+            report["_id"] = str(report["_id"])
+            all_reports_list.append(report)
+
+        return all_reports_list
+
+    except PyMongoError as e:
+        # Log database errors safely
+        logger.error(HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database is not working for internal server problem"), exc_info=True)
+
+
+    except Exception as e:
+        logger.error(e, exc_info=True)
